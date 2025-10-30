@@ -1,0 +1,43 @@
+# ───────────── CMake build directory ─────────────
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/Makefile
+/compile_commands.json
+#---------------Upload Folder-----------------------
+/uploads/
+# ───────────── Ninja build files ─────────────
+/rules.ninja
+/.ninja_deps
+/.ninja_log
+
+# ───────────── IDE and Editor Files ─────────────
+.vscode/
+.idea/
+*.code-workspace
+
+# ───────────── OS-specific files ─────────────
+.DS_Store         # macOS
+Thumbs.db         # Windows
+
+# ───────────── Executables and Binaries ─────────────
+*.exe
+*.out
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+*.clang-format
+# ───────────── Logs ─────────────
+*.log
+.cache/
+.cache/clangd/
+
+# ───────────── User-specific config ─────────────
+*.user
+*.userprefs
+*.suo
+*.vcxproj.*
