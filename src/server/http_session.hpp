@@ -1,80 +1,51 @@
 #pragma once
-#include "Listener.hpp"
+
 #include "Router.hpp"
-#include "ServerContext.hpp"
-#include "boost/asio/io_context.hpp"
-#include "boost/beast/http/string_body_fwd.hpp"
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/beast/core.hpp>
-#include <boost/beast/http.hpp>
-#include <cstddef>
+#include <boost/asio.hpp>
+#include <boost/asio/awaitable.hpp> // <-- Add
+#include <boost/beast.hpp>
 #include <memory>
-#include <sys/stat.h>
+
+namespace net = boost::asio;
+namespace beast = boost::beast;
+namespace http = beast::http;
+using tcp = net::ip::tcp;
 
 namespace server::core {
 
-namespace beast = boost::beast;
-namespace http = beast::http;
-namespace net = boost::asio;
-using tcp = net::ip::tcp;
-
 class HttpSession : public std::enable_shared_from_this<HttpSession> {
+  beast::tcp_stream stream_;
+  std::shared_ptr<Router> router_;
+  beast::flat_buffer buffer_;
+
+  // We keep parser_ as a member, but it will be reset inside the loop
+  std::shared_ptr<http::request_parser<http::string_body>> parser_;
+
 public:
-  explicit HttpSession(tcp::socket &&socket, boost::asio::io_context &io,
-                       std::shared_ptr<Router> &router);
+  HttpSession(tcp::socket &&socket, const std::shared_ptr<Router> &router);
+
+  // This is the public entry point, it will LAUNCH the coroutine
   void run();
 
 private:
-  // Request handling
-  void read_request_header();
-  void handle_request();
-  void handle_string_request();
-  void handle_options_request();
-  // Response handling
-  void send_response(http::response<http::string_body> &&res);
-  void on_write(bool close,
-                std::shared_ptr<http::response<http::string_body>> sp,
-                beast::error_code ec, std::size_t bytes_transferred);
+  // --- This is the new coroutine that contains ALL logic ---
+  net::awaitable<void> do_session();
 
-  // Connection management
-  void do_graceful_close();
-  void do_close();
-  void reset_for_next_request();
+  // --- This helper also becomes an awaitable coroutine ---
+  net::awaitable<void> do_graceful_close();
+
+  net::awaitable<std::tuple<beast::error_code, bool>> do_read_request();
+  net::awaitable<beast::error_code>
+  do_write_response(http::response<http::string_body> &&res);
+
+  http::response<http::string_body> do_build_response();
+  // --- These synchronous helpers remain ---
   bool is_options_request() const;
-  // Helper methods
-
-  http::request<http::string_body>
-  convert_to_string_body(const http::request<http::empty_body> &empty_req) {
-
-    http::request<http::string_body> string_req;
-
-    // Copy metadata
-    string_req.method(empty_req.method());
-    string_req.target(empty_req.target());
-    string_req.version(empty_req.version());
-    string_req.keep_alive(empty_req.keep_alive());
-
-    // Copy headers using string names (safer)
-    for (auto const &field : empty_req) {
-      std::string field_name{field.name_string()};
-      std::string field_value{field.value()};
-
-      // Use string-based set method which is more forgiving
-      string_req.set(field_name, field_value);
-    }
-
-    // Empty body
-    string_req.body() = "";
-    string_req.prepare_payload();
-
-    return string_req;
-  }
-
-private:
-  beast::tcp_stream stream_;
-  beast::flat_buffer buffer_;
-  std::shared_ptr<http::request_parser<http::string_body>> parser_;
-  std::shared_ptr<Router> router_;
+  void reset_for_next_request();
+  void do_close();
 };
+
+// The fail function is fine as a free function
+void fail(beast::error_code ec, const char *what);
 
 } // namespace server::core

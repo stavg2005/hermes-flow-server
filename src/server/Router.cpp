@@ -2,11 +2,15 @@
 #include "boost/beast/http/status.hpp"
 #include "boost/beast/http/verb.hpp"
 #include "boost/json.hpp"
+#include "boost/json/object.hpp"
 #include "boost/url/url_view.hpp"
+#include "models/Nodes.hpp"
+#include "utils/Json2Graph.hpp"
 #include <cstdint>
+#include <iostream>
+#include <memory>
 #include <string>
-
-Router::Router() {}
+namespace sys = boost::system;
 
 void Router::RouteQuery(const http::request<http::string_body> &req,
                         http::response<http::string_body> &res) {
@@ -43,20 +47,54 @@ static void add_common_headers(http::response<http::string_body> &res) {
 
 void Router::HandleTransmitRequest(const http::request<http::string_body> &req,
                                    http::response<http::string_body> &res) {
+  res.version(req.version());
+  res.keep_alive(false);
+  add_common_headers(res);
+
   try {
-    res.version(req.version());
-    res.keep_alive(false);
+    // Parse JSON safely
+    sys::error_code jec;
+    bj::value jv = bj::parse(req.body(), jec);
+    if (jec) {
+      res.result(http::status::bad_request);
+      res.set(http::field::content_type, "application/json");
+      res.body() = bj::serialize(bj::object{
+          {"ok", false}, {"error", "Invalid JSON"}, {"detail", jec.message()}});
+      res.prepare_payload();
+      return;
+    }
+
+    if (!jv.is_object()) {
+      res.result(http::status::bad_request);
+      res.set(http::field::content_type, "application/json");
+      res.body() = bj::serialize(
+          bj::object{{"ok", false}, {"error", "JSON root must be an object"}});
+      res.prepare_payload();
+      return;
+    }
+
+    bj::object &jobj = jv.as_object();
+
+    // Convert JSON -> Graph
+    Graph g = parse_graph(jobj);
+
+    auto id = active_->create_and_run_session(g);
+    auto id = session->id();
+
+    session->set_graph(std::make_shared<Graph>(g));
+
+    session->start(); // non-blocking
+
+    // Respond JSON
     res.result(http::status::ok);
-
-    add_common_headers(res);
     res.set(http::field::content_type, "application/json");
-
-    std::stringstream json;
-    json << "Brody test ok!!!!" << "\"}";
-
-    res.body() = json.str();
-    res.set(http::field::content_length, std::to_string(res.body().size()));
+    res.body() = bj::serialize(bj::object{{"ok", true}, {"session_id", id}});
     res.prepare_payload();
   } catch (const std::exception &e) {
+    res.result(http::status::internal_server_error);
+    res.set(http::field::content_type, "application/json");
+    res.body() = bj::serialize(bj::object{
+        {"ok", false}, {"error", "Server error"}, {"detail", e.what()}});
+    res.prepare_payload();
   }
 }

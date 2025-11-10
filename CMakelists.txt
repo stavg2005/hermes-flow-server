@@ -61,6 +61,8 @@ set(SERVER_SOURCES
     src/server/Listener.cpp
     src/server/http_session.cpp
     src/server/Router.cpp
+    src/server/Session.cpp
+    src/server/io_context_pool.cpp
 )
 
 

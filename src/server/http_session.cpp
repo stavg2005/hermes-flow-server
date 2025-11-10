@@ -1,16 +1,23 @@
 #include "http_session.hpp"
-#include "Listener.hpp"
 #include "Router.hpp"
-#include "boost/asio/io_context.hpp"
-#include "boost/beast/http/message_fwd.hpp"
-#include "boost/beast/http/string_body_fwd.hpp"
-#include "boost/beast/http/verb.hpp"
+#include <boost/asio/as_tuple.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/use_awaitable.hpp>
+#include <boost/beast/http/message.hpp>
+#include <boost/beast/http/string_body.hpp>
 #include <chrono>
 #include <iostream>
 #include <memory>
 
+namespace net = boost::asio;
+namespace beast = boost::beast;
+namespace http = beast::http;
+using tcp = net::ip::tcp;
+
 namespace server::core {
 
+// fail() function is unchanged...
 void fail(beast::error_code ec, const char *what) {
   if (ec != beast::errc::not_connected && ec != net::error::eof &&
       ec != net::error::connection_reset) {
@@ -18,9 +25,10 @@ void fail(beast::error_code ec, const char *what) {
   }
 }
 
-HttpSession::HttpSession(tcp::socket &&socket, boost::asio::io_context &io,
-                         std::shared_ptr<Router> &router)
-    : stream_(std::move(socket)) {
+// Constructor is unchanged...
+HttpSession::HttpSession(tcp::socket &&socket,
+                         const std::shared_ptr<Router> &router)
+    : stream_(std::move(socket)), router_(router) {
 
   beast::error_code ec;
   auto remote = stream_.socket().remote_endpoint(ec);
@@ -30,129 +38,154 @@ HttpSession::HttpSession(tcp::socket &&socket, boost::asio::io_context &io,
   }
 }
 
-void HttpSession::run() { read_request_header(); }
-
-void HttpSession::read_request_header() {
-
-  parser_ = std::make_shared<http::request_parser<http::string_body>>();
-
-  stream_.expires_after(std::chrono::seconds(30));
-  http::async_read_header(
-      stream_, buffer_, *parser_,
-      [self = shared_from_this()](beast::error_code ec, std::size_t bytes) {
-        if (ec == http::error::end_of_stream) {
-          return self->do_close();
-        }
-
-        if (ec) {
-          return fail(ec, "read_header");
-        }
-
-        self->handle_request();
-      });
+void HttpSession::run() {
+  net::co_spawn(
+      stream_.get_executor(), // Run on the socket's I/O context
+      [self = shared_from_this()]() {
+        // Launch the main session coroutine
+        return self->do_session();
+      },
+      net::detached // "Fire-and-forget"
+  );
 }
 
-void HttpSession::handle_request() {
-  if (is_options_request()) {
-    handle_options_request();
-  } else {
-    handle_string_request();
+net::awaitable<void> HttpSession::do_session() {
+  for (;;) {
+    // 1. Reset state
+    parser_ = std::make_shared<http::request_parser<http::string_body>>();
+    stream_.expires_after(std::chrono::seconds(30));
+
+    // 2. Read the request
+    auto [ec_read, keep_alive] = co_await do_read_request();
+    if (ec_read) {
+      if (ec_read == http::error::end_of_stream) {
+        co_await do_graceful_close();
+      } else {
+        fail(ec_read, "read");
+      }
+      co_return; // Stop session
+    }
+
+    // 3. Process the request and build a response
+    http::response<http::string_body> res = do_build_response();
+
+    // 4. Write the response
+    auto ec_write = co_await do_write_response(std::move(res));
+    if (ec_write) {
+      fail(ec_write, "write");
+      co_return; // Stop session
+    }
+
+    // 5. Handle keep-alive
+    if (!keep_alive) {
+      co_await do_graceful_close();
+      co_return; // Stop session
+    }
+
+    // Reset for the next loop
+    reset_for_next_request();
   }
 }
 
+net::awaitable<std::tuple<beast::error_code, bool>>
+HttpSession::do_read_request() {
+
+  // 1. Read Header
+  auto [ec_header, bytes_header] = co_await http::async_read_header(
+      stream_, buffer_, *parser_, net::as_tuple(net::use_awaitable));
+
+  if (ec_header) {
+    co_return std::make_tuple(ec_header, false);
+  }
+
+  // 2. Read Body (if not OPTIONS)
+  if (!is_options_request()) {
+    stream_.expires_after(std::chrono::seconds(30));
+
+    auto [ec_body, bytes_body] = co_await http::async_read(
+        stream_, buffer_, *parser_, net::as_tuple(net::use_awaitable));
+    if (ec_body) {
+      co_return std::make_tuple(ec_body, false);
+    }
+  }
+
+  // Success
+  co_return std::make_tuple(beast::error_code{}, parser_->get().keep_alive());
+}
+
+http::response<http::string_body> HttpSession::do_build_response() {
+  http::response<http::string_body> res;
+  const auto &req = parser_->get();
+
+  if (is_options_request()) {
+    server::models::ResponseBuilder::build_options_response(res, req.version(),
+                                                            req.keep_alive());
+  } else {
+    std::cout << "Extracted body: " << req.body() << std::endl;
+    res.version(req.version());
+    res.keep_alive(req.keep_alive());
+    std::cout << "Routing" << std::endl;
+    router_->RouteQuery(req, res);
+  }
+  return res; // Return the response by value
+}
+
+net::awaitable<beast::error_code>
+HttpSession::do_write_response(http::response<http::string_body> &&res) {
+
+  beast::error_code ec_opt;
+  stream_.socket().set_option(tcp::no_delay(true), ec_opt);
+  if (ec_opt) {
+    fail(ec_opt, "set_option (TCP_NODELAY)");
+  }
+
+  auto [ec_write, bytes_write] = co_await http::async_write(
+      stream_, std::move(res), net::as_tuple(net::use_awaitable));
+
+  if (ec_write) {
+    co_return ec_write;
+  }
+
+  std::cout << "Response sent: " << bytes_write << " bytes" << std::endl;
+  co_return beast::error_code{};
+}
+
+net::awaitable<void> HttpSession::do_graceful_close() {
+  std::cout << "graceful closed" << std::endl;
+  beast::error_code ec;
+  stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
+  if (ec && ec != beast::errc::not_connected) {
+    fail(ec, "shutdown");
+  }
+
+  stream_.expires_after(std::chrono::seconds(10));
+
+  // Drain the socket to read the FIN packet
+  beast::flat_buffer drain_buffer;
+
+  // We'll use try/catch here, since we don't care about the result,
+  // just that the operation finished.
+  try {
+    co_await stream_.async_read_some(
+        drain_buffer.prepare(1024),
+        net::use_awaitable // No as_tuple, we'll catch exceptions
+    );
+  } catch (const std::exception &) {
+    // Ignore all errors during drain (e.g., client hung up)
+  }
+
+  // The coroutine resumes here. Now we do the final close.
+  do_close();
+}
+
+// --- UNCHANGED Synchronous Helpers ---
 bool HttpSession::is_options_request() const {
   return parser_->get().method() == http::verb::options;
-}
-
-void HttpSession::handle_options_request() {
-  auto response = http::response<http::string_body>();
-  server::models::ResponseBuilder::build_options_response(
-      response, parser_->get().version(), parser_->get().keep_alive());
-  send_response(std::move(response));
-}
-
-void HttpSession::handle_string_request() {
-
-  stream_.expires_after(std::chrono::seconds(30));
-  http::async_read(stream_, buffer_, *parser_,
-                   [self = shared_from_this(), this](beast::error_code ec,
-                                                     std::size_t bytes) {
-                     if (ec) {
-                       return fail(ec, "read_body");
-                     }
-
-                     const auto &complete_request = parser_->get();
-
-                     std::cout << "Extracted body: " << complete_request.body()
-                               << std::endl;
-
-                     http::response<http::string_body> res;
-                     res.version(complete_request.version());
-                     res.keep_alive(complete_request.keep_alive());
-
-                     std::cout << "Routing" << std::endl;
-                     router_->RouteQuery(complete_request, res);
-                     send_response(std::move(res));
-                   });
-}
-
-void HttpSession::send_response(http::response<http::string_body> &&res) {
-  auto sp = std::make_shared<http::response<http::string_body>>(std::move(res));
-
-  bool should_close = sp->need_eof();
-  std::cout << "should i close? " << should_close << std::endl;
-
-  // Set TCP_NODELAY for immediate sending
-  beast::error_code ec;
-  stream_.socket().set_option(tcp::no_delay(true), ec);
-
-  http::async_write(stream_, *sp,
-                    beast::bind_front_handler(&HttpSession::on_write,
-                                              shared_from_this(), should_close,
-                                              sp));
-}
-
-void HttpSession::on_write(
-    bool close, std::shared_ptr<http::response<http::string_body>> /*sp*/,
-    beast::error_code ec, std::size_t bytes_transferred) {
-
-  if (ec) {
-    return fail(ec, "write");
-  }
-
-  std::cout << "Response sent: " << bytes_transferred << " bytes" << std::endl;
-
-  // Only close if the response indicates it should close
-  if (close) {
-    return do_graceful_close();
-  }
-
-  // For keep-alive connections, prepare for next request
-  reset_for_next_request();
-  read_request_header(); // Start reading next request
 }
 
 void HttpSession::reset_for_next_request() {
   buffer_.consume(buffer_.size());
   parser_.reset();
-}
-
-void HttpSession::do_graceful_close() {
-  std::cout << "graceful closed" << std::endl;
-  // Shutdown write side
-  beast::error_code ec;
-  stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
-
-  // Give client time to receive
-  stream_.expires_after(std::chrono::seconds(10));
-
-  // Read FIN PACKET
-  auto drain_buffer = std::make_shared<beast::flat_buffer>();
-  stream_.async_read_some(drain_buffer->prepare(1024),
-                          [self = shared_from_this(), drain_buffer](
-                              beast::error_code /*ec*/, std::size_t /*bytes*/) {
-                            self->do_close();
-                          });
 }
 
 void HttpSession::do_close() {
@@ -161,5 +194,7 @@ void HttpSession::do_close() {
   stream_.socket().cancel(ec);
   stream_.socket().close(ec);
 }
+
+// --- All old async/callback functions are now deleted ---
 
 } // namespace server::core
