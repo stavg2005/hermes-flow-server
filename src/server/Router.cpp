@@ -8,6 +8,7 @@
 #include "boost/json.hpp"  // Use primary boost/json.hpp
 #include "boost/url/url_view.hpp"
 #include "models/Nodes.hpp"
+#include "spdlog/spdlog.h"
 #include "utils/Json2Graph.hpp"
 
 namespace sys = boost::system;
@@ -38,7 +39,7 @@ void Router::RouteQuery(const req_t &req, res_t &res) {
     } else if (std::string(e.what()) == "Route not found") {
       status_code = http::status::not_found;
     }
-    std::cout << e.what() << "\n";
+    spdlog::error((e.what()));
     ResponseBuilder::build_error_response(res, e.what(), req.version(),
                                           req.keep_alive(),  // Pass keep_alive
                                           status_code);
@@ -53,7 +54,7 @@ void Router::handle_stop(boost::urls::url_view url, res_t &res) {
 
 void Router::handle_transmit(const req_t &req, res_t &res) {
   //  Parse JSON
-  std::cout << "in handle transmit" << "\n";
+  spdlog::debug(("in handle transmit"));
   sys::error_code jec;
   bj::value jv = bj::parse(req.body(), jec);
   if (jec) {
