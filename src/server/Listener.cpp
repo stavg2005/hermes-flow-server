@@ -59,7 +59,6 @@ listener::listener(net::io_context &main_ioc, io_context_pool &pool,
 void listener::run() {
   std::cout << " Starting to accept connections..." << std::endl;
 
-  // co_spawn launches the coroutine.
   net::co_spawn(
       acceptor_.get_executor(),
       [this, self = shared_from_this()]() { return do_accept(); },
@@ -91,6 +90,5 @@ net::awaitable<void> listener::do_accept() {
         )
         ->run();
 
-    // 5. The loop continues.
   }
 }

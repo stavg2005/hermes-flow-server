@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.27)
-project(HermesFlow 
+project(HermesFlow
     VERSION 1.0.0
     DESCRIPTION "Audio workflows processing server"
     LANGUAGES CXX
@@ -23,9 +23,29 @@ endif()
 # Platform-specific Configuration
 # =============================================================================
 if(WIN32)
+    message(STATUS "Windows detected. Configuring for Windows.")
     add_definitions(-D_WIN32_WINNT=0x0601)  # Windows 7 or later
     add_definitions(-DWIN32_LEAN_AND_MEAN)  # Exclude rarely-used Windows headers
     add_definitions(-DNOMINMAX)             # Don't define min/max macros
+
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(STATUS "Linux detected. Checking for liburing...")
+    # Find PkgConfig to help us find liburing
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        # Check for liburing, but quietly so it doesn't fail if not found
+        pkg_check_modules(URING QUIET liburing)
+    endif()
+
+    if(URING_FOUND)
+        message(STATUS "Found liburing. Enabling io_uring support.")
+        # Set a flag that we'll use later
+        set(HERMES_USE_IO_URING TRUE CACHE BOOL "Use io_uring")
+    else()
+        message(WARNING "liburing not found. io_uring support will be disabled. \
+Install liburing-dev (or equivalent) for maximum performance.")
+        set(HERMES_USE_IO_URING FALSE CACHE BOOL "Use io_uring")
+    endif()
 endif()
 
 # =============================================================================
@@ -35,7 +55,8 @@ include(FetchContent)
 
 # Boost configuration
 set(BOOST_ENABLE_CMAKE ON)
-set(BOOST_INCLUDE_LIBRARIES beast asio json url system foreach uuid)
+# NOTE: BOOST_INCLUDE_LIBRARIES is not used by the new Boost-CMake package,
+# so it has been removed. We link targets directly later.
 
 FetchContent_Declare(
     boost
@@ -43,14 +64,8 @@ FetchContent_Declare(
     DOWNLOAD_EXTRACT_TIMESTAMP ON
 )
 
-
-
-
-
 # Make dependencies available
 FetchContent_MakeAvailable(boost)
-
-
 
 # =============================================================================
 # Source Files Organization
@@ -63,21 +78,17 @@ set(SERVER_SOURCES
     src/server/Router.cpp
     src/server/Session.cpp
     src/server/io_context_pool.cpp
+    src/server/ActiveSessions.cpp
 )
-
-
-
 
 # Collect all implementation files
 set(ALL_SOURCES
-    ${CORE_SOURCES}
     ${SERVER_SOURCES}
 )
 
 #  List header files for IDE integration (helps with project navigation)
 set(HEADER_FILES
-
-
+    # You can list .hpp files here
 )
 
 # =============================================================================
@@ -86,16 +97,13 @@ set(HEADER_FILES
 
 add_executable(Server ${ALL_SOURCES} ${HEADER_FILES})
 
-
-
 # Modern CMake: Use target-specific commands instead of global include_directories
 target_include_directories(Server
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/src/server
-        ${boost_SOURCE_DIR}/libs/uuid/include 
-       
+        ${boost_SOURCE_DIR}/libs/uuid/include
 )
 
 # Link libraries
@@ -107,8 +115,29 @@ target_link_libraries(Server
         Boost::system
         Boost::json
         Boost::url
-        
 )
+
+# =============================================================================
+# Platform-specific Target Settings
+# =============================================================================
+
+# Conditionally add io_uring support if the flag was set earlier
+if(HERMES_USE_IO_URING)
+    message(STATUS "Adding io_uring compile definitions and linking liburing.")
+
+    # 1. Add the compile definitions to enable io_uring in Asio
+    target_compile_definitions(Server
+        PRIVATE
+            BOOST_ASIO_HAS_IO_URING
+            BOOST_ASIO_DISABLE_EPOLL # Use io_uring as the default backend
+    )
+
+    # 2. Link your server against the liburing library
+    target_link_libraries(Server
+        PRIVATE
+            ${URING_LIBRARIES} # Link liburing
+    )
+endif()
 
 
 # Print configuration summary
@@ -116,5 +145,7 @@ message(STATUS "=== Hermes-flow Configuration ===")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
-message(STATUS "Install prefix: ${CMAKE_INSTALL_PREFIX}")
+if(HERMES_USE_IO_URING)
+    message(STATUS "io_uring: Enabled")
+endif()
 message(STATUS "===============================")

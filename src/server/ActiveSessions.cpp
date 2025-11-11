@@ -2,8 +2,11 @@
 #include "Session.hpp"
 #include "models/Nodes.hpp"
 #include <boost/uuid.hpp>
-#include <memory>
 
+
+ std::shared_ptr<ActiveSessions> ActiveSessions::create(){
+  return nullptr;
+};
 std::string ActiveSessions::create_and_run_session(Graph graph) {
-  auto Session = std::shared_ptr<Session>()
-}
+  return "not implemented";
+};

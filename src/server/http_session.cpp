@@ -40,22 +40,21 @@ HttpSession::HttpSession(tcp::socket &&socket,
 
 void HttpSession::run() {
   net::co_spawn(
-      stream_.get_executor(), // Run on the socket's I/O context
+      stream_.get_executor(),
       [self = shared_from_this()]() {
-        // Launch the main session coroutine
         return self->do_session();
       },
-      net::detached // "Fire-and-forget"
+      net::detached
   );
 }
 
 net::awaitable<void> HttpSession::do_session() {
   for (;;) {
-    // 1. Reset state
+    // Reset state
     parser_ = std::make_shared<http::request_parser<http::string_body>>();
     stream_.expires_after(std::chrono::seconds(30));
 
-    // 2. Read the request
+    // Read the request
     auto [ec_read, keep_alive] = co_await do_read_request();
     if (ec_read) {
       if (ec_read == http::error::end_of_stream) {
@@ -66,10 +65,10 @@ net::awaitable<void> HttpSession::do_session() {
       co_return; // Stop session
     }
 
-    // 3. Process the request and build a response
+    // Process the request and build a response
     http::response<http::string_body> res = do_build_response();
 
-    // 4. Write the response
+    //write the response
     auto ec_write = co_await do_write_response(std::move(res));
     if (ec_write) {
       fail(ec_write, "write");
@@ -178,7 +177,7 @@ net::awaitable<void> HttpSession::do_graceful_close() {
   do_close();
 }
 
-// --- UNCHANGED Synchronous Helpers ---
+
 bool HttpSession::is_options_request() const {
   return parser_->get().method() == http::verb::options;
 }
@@ -195,6 +194,5 @@ void HttpSession::do_close() {
   stream_.socket().close(ec);
 }
 
-// --- All old async/callback functions are now deleted ---
 
-} // namespace server::core
+}
