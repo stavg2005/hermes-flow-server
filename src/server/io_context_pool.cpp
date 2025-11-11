@@ -1,17 +1,18 @@
-#include "io_context_pool.hpp" // 1. Include the header
+#include "io_context_pool.hpp"
 
-#include <iostream>  // For std::cerr in the run() lambda
-#include <stdexcept> // For custom exception base
+#include <iostream>
+#include <stdexcept>
 
-// Dedicated exception for io_context_pool errors
 class io_context_pool_exception : public std::runtime_error {
 public:
   using std::runtime_error::runtime_error;
 };
 namespace net = boost::asio;
 
-io_context_pool::io_context_pool(std::size_t pool_size) {
-
+io_context_pool::io_context_pool(std::size_t pool_size)
+    // --- ADDED ---
+    // Initialize next_io_context_ (was missing)
+    : next_io_context_(0) {
   if (pool_size == 0) {
     throw io_context_pool_exception("io_context_pool size must be > 0");
   }
@@ -25,6 +26,7 @@ io_context_pool::io_context_pool(std::size_t pool_size) {
 
 io_context_pool::~io_context_pool() {
   try {
+    // We can call stop() again, it's safe.
     stop();
   } catch (const std::exception &e) {
     std::cerr << "Exception during io_context_pool shutdown: " << e.what()
@@ -47,33 +49,42 @@ void io_context_pool::run() {
       try {
         ioc->run();
       } catch (const boost::system::system_error &e) {
+        // This can happen on unclean shutdown, but we'll log it.
         std::cerr << "io_context_pool thread boost::system::system_error: "
                   << e.what() << std::endl;
       }
     });
   }
-}
 
-void io_context_pool::stop() {
-  // 1. Destroy all work guards.
-  work_guards_.clear();
 
-  // 2. Explicitly stop all io_contexts.
-  for (const auto &ioc : io_contexts_) {
-    if (ioc && !ioc->stopped()) {
-      ioc->stop();
-    }
-  }
-
-  // 3. Join all threads. (std::jthread would also do this on destruction)
+  // The run() function now blocks the main thread by joining
+  // all worker threads. It will only unblock when the
+  // threads exit, which happens after stop() is called.
   for (auto &t : threads_) {
     if (t.joinable()) {
       t.join();
     }
   }
 
-  // 4. Clear the thread vector
+
+  // Clear the thread vector once they've all been joined.
   threads_.clear();
+}
+
+void io_context_pool::stop() {
+  // Destroy all work guards.
+  // This allows the io_context::run() calls in the threads
+  // to return once they finish their current work.
+  work_guards_.clear();
+
+  // Explicitly stop all io_contexts.
+  // This will interrupt any blocking operations.
+  for (const auto &ioc : io_contexts_) {
+    if (ioc && !ioc->stopped()) {
+      ioc->stop();
+    }
+  }
+
 }
 
 net::io_context &io_context_pool::get_io_context() {

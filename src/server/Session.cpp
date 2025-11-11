@@ -30,8 +30,9 @@ void Session::run() {
       net::detached);
 }
 
+Node* Session::get_start_node() { return nullptr; }
+
 net::awaitable<void> Session::do_start() {
-  InitilizeBuffers();
   auto current_node = get_start_node();
   try {
     for (;;) {
@@ -81,3 +82,10 @@ net::awaitable<void> Session::Process_Current_Node_Frame(
 
   co_return;
 }
+
+net::awaitable<void> Session::Packetize_And_Transmit_Frame(
+    std::span<uint8_t, 160>& frame_buffer) {
+  co_return;
+}
+
+net::awaitable<void> Session::RefillRequest() { co_return; }

@@ -23,7 +23,6 @@ class Session : public std::enable_shared_from_this<Session> {
  public:
   // Non-blocking; schedules startup on executor.
 
-  void InitilizeBuffers();
 
   void start();
 

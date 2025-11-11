@@ -55,17 +55,24 @@ include(FetchContent)
 
 # Boost configuration
 set(BOOST_ENABLE_CMAKE ON)
-# NOTE: BOOST_INCLUDE_LIBRARIES is not used by the new Boost-CMake package,
-# so it has been removed. We link targets directly later.
-
 FetchContent_Declare(
     boost
     URL https://github.com/boostorg/boost/releases/download/boost-1.88.0/boost-1.88.0-cmake.zip
     DOWNLOAD_EXTRACT_TIMESTAMP ON
 )
 
+
+# spdlog configuration
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.14.1
+    GIT_SHALLOW    TRUE
+)
+
 # Make dependencies available
-FetchContent_MakeAvailable(boost)
+# --- FIX: ADDED 'fmt' ---
+FetchContent_MakeAvailable(boost spdlog)
 
 # =============================================================================
 # Source Files Organization
@@ -103,7 +110,8 @@ target_include_directories(Server
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/src/server
-        ${boost_SOURCE_DIR}/libs/uuid/include
+        # --- FIX: REMOVED redundant Boost include ---
+        # The Boost::asio, etc. targets handle their own includes.
 )
 
 # Link libraries
@@ -115,6 +123,8 @@ target_link_libraries(Server
         Boost::system
         Boost::json
         Boost::url
+        Boost::uuid
+        spdlog::spdlog     
 )
 
 # =============================================================================

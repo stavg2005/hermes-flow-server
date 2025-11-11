@@ -19,6 +19,7 @@ namespace net = boost::asio;
 static void fail(beast::error_code ec, const char *what) {
   if (ec != beast::errc::not_connected && ec != net::error::eof &&
       ec != net::error::connection_reset) {
+        
     std::cerr << what << ": " << ec.message() << "\n";
   }
 }
