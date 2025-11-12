@@ -1,0 +1,12 @@
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  readability-*,
+  -bugprone-unchecked-optional-access,
+  -readability-identifier-length
+
+HeaderFilterRegex: '.*(src|include)/.*'
+CheckOptions:
+  - key: readability-identifier-naming.VariableCase
+    value: camelCase

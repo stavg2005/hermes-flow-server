@@ -5,79 +5,98 @@ project(HermesFlow
     LANGUAGES CXX
 )
 
-# =============================================================================
-# Project Configuration
-# =============================================================================
+# ----------------------------------------------------------------------
+# Project configuration
+# ----------------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose build type" FORCE)
-    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+        "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+endif()
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+
+# ----------------------------------------------------------------------
+# clang‑tidy is DISABLED
+# ----------------------------------------------------------------------
+
+
+# ----------------------------------------------------------------------
+# Sanitizers (optional)
+# ----------------------------------------------------------------------
+option(ENABLE_ASAN  "Enable AddressSanitizer" OFF)
+option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+option(ENABLE_TSAN  "Enable ThreadSanitizer" OFF)
+
+set(SANITIZER_FLAGS "")
+if(ENABLE_ASAN)
+    list(APPEND SANITIZER_FLAGS "address")
+endif()
+if(ENABLE_UBSAN)
+    list(APPEND SANITIZER_FLAGS "undefined" "integer" "nullability")
+endif()
+if(ENABLE_TSAN)
+    list(APPEND SANITIZER_FLAGS "thread")
 endif()
 
-# =============================================================================
-# Platform-specific Configuration
-# =============================================================================
-if(WIN32)
-    message(STATUS "Windows detected. Configuring for Windows.")
-    add_definitions(-D_WIN32_WINNT=0x0601)  # Windows 7 or later
-    add_definitions(-DWIN32_LEAN_AND_MEAN)  # Exclude rarely-used Windows headers
-    add_definitions(-DNOMINMAX)             # Don't define min/max macros
+if(ENABLE_ASAN AND ENABLE_TSAN)
+    message(FATAL_ERROR "ASan and TSan cannot be used together")
+endif()
 
+# ----------------------------------------------------------------------
+# Platform‑specific bits
+# ----------------------------------------------------------------------
+if(WIN32)
+    message(STATUS "Windows – setting _WIN32_WINNT")
+    add_definitions(-D_WIN32_WINNT=0x0601)   # **only once**
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    message(STATUS "Linux detected. Checking for liburing...")
-    # Find PkgConfig to help us find liburing
+    message(STATUS "Linux – checking for liburing")
     find_package(PkgConfig QUIET)
     if(PKG_CONFIG_FOUND)
-        # Check for liburing, but quietly so it doesn't fail if not found
         pkg_check_modules(URING QUIET liburing)
     endif()
-
     if(URING_FOUND)
-        message(STATUS "Found liburing. Enabling io_uring support.")
-        # Set a flag that we'll use later
         set(HERMES_USE_IO_URING TRUE CACHE BOOL "Use io_uring")
+        message(STATUS "liburing found – io_uring enabled")
     else()
-        message(WARNING "liburing not found. io_uring support will be disabled. \
-Install liburing-dev (or equivalent) for maximum performance.")
         set(HERMES_USE_IO_URING FALSE CACHE BOOL "Use io_uring")
+        message(WARNING "liburing not found – io_uring disabled")
     endif()
 endif()
 
-# =============================================================================
+# ----------------------------------------------------------------------
 # Dependencies
-# =============================================================================
+# ----------------------------------------------------------------------
 include(FetchContent)
 
-# Boost configuration
-set(BOOST_ENABLE_CMAKE ON)
-FetchContent_Declare(
-    boost
-    URL https://github.com/boostorg/boost/releases/download/boost-1.88.0/boost-1.88.0-cmake.zip
-    DOWNLOAD_EXTRACT_TIMESTAMP ON
-)
+# ---- spdlog (use std::format – no external fmt) -----------------------
+set(SPDLOG_USE_STD_FORMAT ON CACHE BOOL "Use std::format for spdlog" FORCE)
 
-
-# spdlog configuration
 FetchContent_Declare(
     spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
     GIT_TAG        v1.14.1
     GIT_SHALLOW    TRUE
 )
+FetchContent_MakeAvailable(spdlog)
 
-# Make dependencies available
-# --- FIX: ADDED 'fmt' ---
-FetchContent_MakeAvailable(boost spdlog)
+# ---- Boost -----------------------------------------------------------
+set(BOOST_ENABLE_CMAKE ON)
+FetchContent_Declare(
+    boost
+    URL https://github.com/boostorg/boost/releases/download/boost-1.88.0/boost-1.88.0-cmake.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP ON
+)
+FetchContent_MakeAvailable(boost)
 
-# =============================================================================
-# Source Files Organization
-# =============================================================================
 
+# ----------------------------------------------------------------------
+# Sources
+# ----------------------------------------------------------------------
 set(SERVER_SOURCES
     src/main.cpp
     src/server/Listener.cpp
@@ -88,33 +107,29 @@ set(SERVER_SOURCES
     src/server/ActiveSessions.cpp
 )
 
-# Collect all implementation files
-set(ALL_SOURCES
-    ${SERVER_SOURCES}
-)
+add_executable(Server ${SERVER_SOURCES})
 
-#  List header files for IDE integration (helps with project navigation)
-set(HEADER_FILES
-    # You can list .hpp files here
-)
+find_program(CLANG_TIDY_EXE clang-tidy)
+if(CLANG_TIDY_EXE)
+    message(STATUS "Found clang-tidy: ${CLANG_TIDY_EXE}")
 
-# =============================================================================
-# Target Definition
-# =============================================================================
-
-add_executable(Server ${ALL_SOURCES} ${HEADER_FILES})
-
-# Modern CMake: Use target-specific commands instead of global include_directories
+    set_target_properties(Server PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+else()
+    message(STATUS "clang-tidy not found – linting disabled")
+endif()
 target_include_directories(Server
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/src/server
-        # --- FIX: REMOVED redundant Boost include ---
-        # The Boost::asio, etc. targets handle their own includes.
 )
 
-# Link libraries
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # Don't try to link atomic on Windows with Clang
+    set_target_properties(Server PROPERTIES
+        LINK_FLAGS "-Wl,--allow-undefined-symbols"
+    )
+endif()
 target_link_libraries(Server
     PRIVATE
         Boost::headers
@@ -123,39 +138,56 @@ target_link_libraries(Server
         Boost::system
         Boost::json
         Boost::url
-        Boost::uuid
-        spdlog::spdlog     
+        spdlog::spdlog
 )
 
-# =============================================================================
-# Platform-specific Target Settings
-# =============================================================================
-
-# Conditionally add io_uring support if the flag was set earlier
-if(HERMES_USE_IO_URING)
-    message(STATUS "Adding io_uring compile definitions and linking liburing.")
-
-    # 1. Add the compile definitions to enable io_uring in Asio
+# ----------------------------------------------------------------------
+# Platform‑specific target settings
+# ----------------------------------------------------------------------
+if(WIN32)
     target_compile_definitions(Server
         PRIVATE
-            BOOST_ASIO_HAS_IO_URING
-            BOOST_ASIO_DISABLE_EPOLL # Use io_uring as the default backend
-    )
-
-    # 2. Link your server against the liburing library
-    target_link_libraries(Server
-        PRIVATE
-            ${URING_LIBRARIES} # Link liburing
+            WIN32_LEAN_AND_MEAN
+            DNOMINMAX
     )
 endif()
 
-
-# Print configuration summary
-message(STATUS "=== Hermes-flow Configuration ===")
-message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 if(HERMES_USE_IO_URING)
-    message(STATUS "io_uring: Enabled")
+    target_compile_definitions(Server
+        PRIVATE
+            BOOST_ASIO_HAS_IO_URING
+            BOOST_ASIO_DISABLE_EPOLL
+    )
+    target_link_libraries(Server PRIVATE ${URING_LIBRARIES})
+endif()
+
+# ----------------------------------------------------------------------
+# Sanitizers (apply only to the Server target)
+# ----------------------------------------------------------------------
+if(SANITIZER_FLAGS)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        list(JOIN SANITIZER_FLAGS "," SANITIZER_FLAGS_STR)
+        set(SANITIZER_FLAGS_STR "-fsanitize=${SANITIZER_FLAGS_STR}")
+        message(STATUS "Enabling sanitizers: ${SANITIZER_FLAGS_STR}")
+
+        target_compile_options(Server PRIVATE ${SANITIZER_FLAGS_STR} -fno-omit-frame-pointer -g)
+        target_link_options(Server    PRIVATE ${SANITIZER_FLAGS_STR})
+    else()
+        message(WARNING "Sanitizers only supported with Clang/GCC – disabled")
+    endif()
+endif()
+
+# ----------------------------------------------------------------------
+# Summary
+# ----------------------------------------------------------------------
+message(STATUS "=== Hermes-flow Configuration ===")
+message(STATUS "C++ standard : ${CMAKE_CXX_STANDARD}")
+message(STATUS "Compiler     : ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+if(HERMES_USE_IO_URING)
+    message(STATUS "io_uring     : Enabled")
+endif()
+
+if(SANITIZER_FLAGS)
+    message(STATUS "Sanitizers   : ${SANITIZER_FLAGS}")
 endif()
 message(STATUS "===============================")
