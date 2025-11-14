@@ -7,16 +7,15 @@
 
 #include "Session.hpp"
 #include "boost/asio/io_context.hpp"
+#include "io_context_pool.hpp"
 
 class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
  public:
   using Id = std::string;
-
-  // Factory: registry itself is always heap-allocated and shared.
-  static std::shared_ptr<ActiveSessions> create();
+  explicit ActiveSessions(std::shared_ptr<io_context_pool> pool);
 
   // Create + run a session; returns the shared_ptr and its id.
-  std::string create_and_run_session(Graph graph);
+  std::string create_and_run_session(const bj::object &jobj);
 
   bool remove_session(const Id &id);
 
@@ -27,8 +26,6 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
 
   // Management
   void stop_all();  // orderly: async_stop each session
-  void GetFrame();  // on 20ms tick everys session must produce a frame
-  // Called by Session when it fully stops (to auto-erase)
   void on_session_stopped(const Id &id);
 
   // Non-copyable
@@ -36,8 +33,9 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
   ActiveSessions &operator=(const ActiveSessions &) = delete;
 
  private:
-  explicit ActiveSessions(boost::asio::io_context io);
   Id generate_uuid() const;  // stable key for map
   std::mutex mutex_;
   std::unordered_map<Id, std::shared_ptr<Session>> sessions_;
+  std::shared_ptr<io_context_pool> pool_;
+  std::atomic<int64_t> next_session_id_ = 0;
 };

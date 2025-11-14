@@ -6,8 +6,11 @@
 #include <span>
 #include <string>
 #include <unordered_map>
-#include <variant>
 #include <vector>
+
+#include "../utils/config.hpp"
+#include "models/Nodes.hpp"
+#include "spdlog/spdlog.h"
 
 namespace bj = boost::json;
 
@@ -32,19 +35,19 @@ struct Double_Buffer {
   double gain{1.0};
 
   // 500kb buffers
-  std::array<uint8_t, (1024 * 512)> block_1{0};
-  std::array<uint8_t, (1024 * 512)> block_2{0};
+  std::array<uint8_t, BUFFER_SIZE> block_1{0};
+  std::array<uint8_t, BUFFER_SIZE> block_2{0};
 };
 
 struct Node {
-  Node(Node *t = nullptr) : target(t) {}
+  explicit Node(Node *t = nullptr) : target(t) {}
   std::string id;
   NodeKind kind;
   int processed_frames{0};
   int total_frames{0};
   Node *target;
 
-  virtual void ProcessFrame(std::span<uint8_t, 160> &frame_buffer) = 0;
+  virtual void ProcessFrame(std::span<uint8_t, FRAME_SIZE> &frame_buffer) = 0;
   virtual ~Node() = default;
 };
 
@@ -52,9 +55,10 @@ struct MixerNode : Node {
   // Stores buffers for all files associated with this mixer
   std::unordered_map<std::string, std::unique_ptr<Double_Buffer>> files_buffers;
 
-  MixerNode(Node *t = nullptr) : Node(t) {}
-  void ProcessFrame(std::span<uint8_t, 160> &frame_buffer) override {
-    // Mixer logic...
+  explicit MixerNode(Node *t = nullptr) : Node(t) {}
+  void ProcessFrame(std::span<uint8_t, FRAME_SIZE> &frame_buffer) override {
+    
+    processed_frames += FRAME_SIZE;
   }
 };
 
@@ -67,24 +71,24 @@ struct FileInputNode : Node {
   // Added gain, which will be parsed from the options
   double gain{1.0};
 
-  FileInputNode(Node *t = nullptr) : Node(t) {}
-  void ProcessFrame(std::span<uint8_t, 160> &frame_buffer) override {
-    // File input logic...
+  explicit FileInputNode(Node *t = nullptr) : Node(t) {}
+  void ProcessFrame(std::span<uint8_t, FRAME_SIZE> &frame_buffer) override {
+    spdlog::debug("processing frame for FileInput {}", id);
   }
 };
 
 struct DelayNode : Node {
   int delay_ms{0};
-  DelayNode(Node *t = nullptr) : Node(t) {}
-  void ProcessFrame(std::span<uint8_t, 160> &frame_buffer) override {
-    // Delay logic...
+  explicit DelayNode(Node *t = nullptr) : Node(t) {}
+  void ProcessFrame(std::span<uint8_t, FRAME_SIZE> &frame_buffer) override {
+    spdlog::debug("processing frame for Delay {}", id);
   }
 };
 
 struct ClientsNode : Node {
   // Add client data members here...
   ClientsNode(Node *t = nullptr) : Node(t) {}
-  void ProcessFrame(std::span<uint8_t, 160> &frame_buffer) override {
+  void ProcessFrame(std::span<uint8_t, FRAME_SIZE> &frame_buffer) override {
     // Client output logic...
   }
 };
@@ -92,8 +96,8 @@ struct ClientsNode : Node {
 struct FileOptionsNode : Node {
   // This node *is* the gain, so it's parsed from data.gain
   double gain{1.0};
-  FileOptionsNode(Node *t = nullptr) : Node(t) {}
-  void ProcessFrame(std::span<uint8_t, 160> &frame_buffer) override {
+  explicit FileOptionsNode(Node *t = nullptr) : Node(t) {}
+  void ProcessFrame(std::span<uint8_t, FRAME_SIZE> &frame_buffer) override {
     // Options logic...
   }
 };
@@ -101,4 +105,5 @@ struct FileOptionsNode : Node {
 struct Graph {
   std::vector<std::unique_ptr<Node>> nodes;
   std::unordered_map<std::string, Node *> node_map;
+  Node *start_node = nullptr;
 };

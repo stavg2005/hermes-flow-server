@@ -3,8 +3,10 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "spdlog/spdlog.h"
+
 class io_context_pool_exception : public std::runtime_error {
-public:
+ public:
   using std::runtime_error::runtime_error;
 };
 namespace net = boost::asio;
@@ -51,37 +53,18 @@ void io_context_pool::run() {
       } catch (const boost::system::system_error &e) {
         // This can happen on unclean shutdown, but we'll log it.
         std::cerr << "io_context_pool thread boost::system::system_error: "
-                  << e.what() << std::endl;
+                  << e.what() << "\n";
       }
     });
   }
-
-
-  // The run() function now blocks the main thread by joining
-  // all worker threads. It will only unblock when the
-  // threads exit, which happens after stop() is called.
-  for (auto &t : threads_) {
-    if (t.joinable()) {
-      t.join();
-    }
-  }
-
-
-  // Clear the thread vector once they've all been joined.
-  threads_.clear();
 }
 
 void io_context_pool::stop() {
-  // Destroy all work guards.
-  // This allows the io_context::run() calls in the threads
-  // to return once they finish their current work.
-  work_guards_.clear();
+  work_guards_.clear();  // Let ioc->run() return
 
-  // Explicitly stop all io_contexts.
-  // This will interrupt any blocking operations.
   for (const auto &ioc : io_contexts_) {
     if (ioc && !ioc->stopped()) {
-      ioc->stop();
+      ioc->stop();  // Stop any blocking ops
     }
   }
 
@@ -89,10 +72,10 @@ void io_context_pool::stop() {
 
 net::io_context &io_context_pool::get_io_context() {
   // Get the next io_context
-  auto &ioc = *io_contexts_[next_io_context_];
-
+  spdlog::debug("Fetching IO contect from pool");
+  spdlog::debug("go io context");
   // Increment and wrap around for the next call
-  next_io_context_ = (next_io_context_ + 1) % io_contexts_.size();
+  std::size_t i = next_io_context_.fetch_add(1, std::memory_order_relaxed);
 
-  return ioc;
+  return *io_contexts_[i % io_contexts_.size()];
 }

@@ -85,7 +85,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(spdlog)
 
 # ---- Boost -----------------------------------------------------------
-set(BOOST_ENABLE_CMAKE ON)
+set(BOOST_INCLUDE_LIBRARIES asio beast json system url uuid)
 FetchContent_Declare(
     boost
     URL https://github.com/boostorg/boost/releases/download/boost-1.88.0/boost-1.88.0-cmake.zip
@@ -93,6 +93,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(boost)
 
+# ---- Boost -----------------------------------------------------------
+FetchContent_Declare(
+    sigv4
+    GIT_REPOSITORY https://github.com/aws/SigV4-for-AWS-IoT-embedded-sdk.git
+    GIT_TAG v1.3.0
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(sigv4)
 
 # ----------------------------------------------------------------------
 # Sources
@@ -105,40 +113,40 @@ set(SERVER_SOURCES
     src/server/Session.cpp
     src/server/io_context_pool.cpp
     src/server/ActiveSessions.cpp
+    src/utils/Json2Graph.cpp
+    src/utils/DownloadSession.cpp
 )
 
 add_executable(Server ${SERVER_SOURCES})
 
-find_program(CLANG_TIDY_EXE clang-tidy)
-if(CLANG_TIDY_EXE)
-    message(STATUS "Found clang-tidy: ${CLANG_TIDY_EXE}")
+set(SIGV4_INCLUDE_DIR "${_deps_sigv4-src_SOURCE_DIR}/source/include")
 
-    set_target_properties(Server PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
-else()
-    message(STATUS "clang-tidy not found – linting disabled")
-endif()
+
 target_include_directories(Server
     PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/src/server
+        ${sigv4_SOURCE_DIR}/include
+        ${SIGV4_INCLUDE_DIR}
 )
 
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # Don't try to link atomic on Windows with Clang
-    set_target_properties(Server PROPERTIES
-        LINK_FLAGS "-Wl,--allow-undefined-symbols"
-    )
+    # set_target_properties(Server PROPERTIES
+    #     LINK_FLAGS "-Wl,--allow-undefined-symbols"
+    # )
 endif()
 target_link_libraries(Server
     PRIVATE
-        Boost::headers
+        sigv4
         Boost::asio
         Boost::beast
         Boost::system
         Boost::json
         Boost::url
         spdlog::spdlog
+
 )
 
 # ----------------------------------------------------------------------

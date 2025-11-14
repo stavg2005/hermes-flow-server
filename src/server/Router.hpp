@@ -2,6 +2,7 @@
 #include "ActiveSessions.hpp"
 #include "boost/beast/http/message_fwd.hpp"
 #include "boost/beast/http/string_body_fwd.hpp"
+#include "io_context_pool.hpp"
 #include "models/response_builder.hpp"
 #include <boost/asio/io_context.hpp>
 #include <boost/beast/core/buffers_to_string.hpp>
@@ -30,8 +31,9 @@ private:
   void handle_transmit(const http::request<http::string_body> &req,
                              http::response<http::string_body> &res);
 
-  void handle_stop(boost::urls::url_view url,
+  void handle_stop(boost::urls::url_view &url,
                          http::response<http::string_body> &res);
 
   std::shared_ptr<ActiveSessions> active_;
+  std::shared_ptr<io_context_pool> pool_;
 };

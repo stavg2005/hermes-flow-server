@@ -7,7 +7,6 @@
 #include <boost/beast/http/message.hpp>
 #include <boost/beast/http/string_body.hpp>
 #include <chrono>
-#include <iostream>
 #include <memory>
 
 #include "Router.hpp"
@@ -16,6 +15,8 @@
 namespace net = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
+static const int SESSION_TIMEOUT_SECONDS = 30;
+static const int DRAIN_BUFFER_SIZE = 1024;
 using tcp = net::ip::tcp;
 
 namespace server::core {
@@ -24,7 +25,7 @@ namespace server::core {
 void fail(beast::error_code ec, const char *what) {
   if (ec != beast::errc::not_connected && ec != net::error::eof &&
       ec != net::error::connection_reset) {
-    spdlog::error((what));
+    spdlog::error(what);
   }
 }
 
@@ -51,7 +52,7 @@ net::awaitable<void> HttpSession::do_session() {
   for (;;) {
     // Reset state
     parser_ = std::make_shared<http::request_parser<http::string_body>>();
-    stream_.expires_after(std::chrono::seconds(30));
+    stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
 
     // Read the request
     auto [ec_read, keep_alive] = co_await do_read_request();
@@ -68,7 +69,7 @@ net::awaitable<void> HttpSession::do_session() {
     http::response<http::string_body> res = do_build_response();
 
     // write the response
-    auto ec_write = co_await do_write_response(std::move(res));
+    auto ec_write = co_await do_write_response(res);
     if (ec_write) {
       fail(ec_write, "write");
       co_return;  // Stop session
@@ -76,6 +77,7 @@ net::awaitable<void> HttpSession::do_session() {
 
     // 5. Handle keep-alive
     if (!keep_alive) {
+      spdlog::info("closing http session");
       co_await do_graceful_close();
       co_return;  // Stop session
     }
@@ -97,7 +99,7 @@ HttpSession::do_read_request() {
 
   // Read Body (if not OPTIONS)
   if (!is_options_request()) {
-    stream_.expires_after(std::chrono::seconds(30));
+    stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
 
     auto [ec_body, bytes_body] = co_await http::async_read(
         stream_, buffer_, *parser_, net::as_tuple(net::use_awaitable));
@@ -127,15 +129,15 @@ http::response<http::string_body> HttpSession::do_build_response() {
 }
 
 net::awaitable<beast::error_code> HttpSession::do_write_response(
-    http::response<http::string_body> &&res) {
+    http::response<http::string_body> &res) {
   beast::error_code ec_opt;
-  stream_.socket().set_option(tcp::no_delay(true), ec_opt);
+  ec_opt = stream_.socket().set_option(tcp::no_delay(true), ec_opt);
   if (ec_opt) {
     fail(ec_opt, "set_option (TCP_NODELAY)");
   }
 
   auto [ec_write, bytes_write] = co_await http::async_write(
-      stream_, std::move(res), net::as_tuple(net::use_awaitable));
+      stream_, res, net::as_tuple(net::use_awaitable));
 
   if (ec_write) {
     co_return ec_write;
@@ -146,14 +148,14 @@ net::awaitable<beast::error_code> HttpSession::do_write_response(
 }
 
 net::awaitable<void> HttpSession::do_graceful_close() {
-  spdlog::info(("graceful closed"));
+  spdlog::info("graceful closed");
   beast::error_code ec;
-  stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
+  ec = stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
   if (ec && ec != beast::errc::not_connected) {
     fail(ec, "shutdown");
   }
 
-  stream_.expires_after(std::chrono::seconds(10));
+  stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
 
   // Drain the socket to read the FIN packet
   beast::flat_buffer drain_buffer;
@@ -162,7 +164,7 @@ net::awaitable<void> HttpSession::do_graceful_close() {
   // just that the operation finished.
   try {
     co_await stream_.async_read_some(
-        drain_buffer.prepare(1024),
+        drain_buffer.prepare(DRAIN_BUFFER_SIZE),
         net::use_awaitable  // No as_tuple, we'll catch exceptions
     );
   } catch (const std::exception &) {
@@ -184,8 +186,11 @@ void HttpSession::reset_for_next_request() {
 
 void HttpSession::do_close() {
   beast::error_code ec;
-  stream_.socket().cancel(ec);
-  stream_.socket().close(ec);
+  ec = stream_.socket().cancel(ec);
+
+  if (ec && ec != beast::errc::not_connected) {
+    fail(ec, "close");
+  }
 }
 
 }  // namespace server::core

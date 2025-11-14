@@ -1,3 +1,4 @@
+---
 Checks: >
   -*,
   bugprone-*,
@@ -6,7 +7,12 @@ Checks: >
   -bugprone-unchecked-optional-access,
   -readability-identifier-length
 
-HeaderFilterRegex: '.*(src|include)/.*'
+# This regex is the fix. It now only matches files that are
+# inside your project's "hermes-flow-server/src" or
+# "hermes-flow-server/include" directories.
+HeaderFilterRegex: '.*/hermes-flow-server/(src|include)/.*'
+
 CheckOptions:
   - key: readability-identifier-naming.VariableCase
     value: camelCase
+...

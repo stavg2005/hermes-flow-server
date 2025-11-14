@@ -26,12 +26,10 @@ class io_context_pool {
 
   void stop();
 
-
-   //@brief Get an io_context from the pool in a round-robin fashion.
+  //@brief Get an io_context from the pool in a round-robin fashion.
   net::io_context &get_io_context();
 
  private:
-
   std::vector<std::shared_ptr<net::io_context>> io_contexts_;
 
   using work_guard_type =
@@ -40,7 +38,7 @@ class io_context_pool {
 
   std::vector<std::jthread> threads_;
 
-  std::size_t next_io_context_{0};
+  std::atomic<std::size_t> next_io_context_{0};
 };
 
-#endif  
+#endif

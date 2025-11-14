@@ -28,7 +28,7 @@ static void fail(beast::error_code ec, const char *what) {
 
 // Constructor is unchanged
 listener::listener(net::io_context &main_ioc, io_context_pool &pool,
-                   tcp::endpoint endpoint,
+                   const tcp::endpoint& endpoint,
                    const std::shared_ptr<Router> &router)
     : acceptor_(main_ioc), main_ioc_(main_ioc), pool_(pool), router_(router) {
   beast::error_code ec;
@@ -81,7 +81,7 @@ net::awaitable<void> listener::do_accept() {
       continue;
     }
 
-    spdlog::debug(("New connection accepted "));
+    spdlog::debug("New connection accepted ");
 
     // 4. Create the session.
     std::make_shared<server::core::HttpSession>(

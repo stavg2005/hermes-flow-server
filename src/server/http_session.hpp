@@ -36,7 +36,7 @@ private:
 
   net::awaitable<std::tuple<beast::error_code, bool>> do_read_request();
   net::awaitable<beast::error_code>
-  do_write_response(http::response<http::string_body> &&res);
+  do_write_response(http::response<http::string_body> &res);
 
   http::response<http::string_body> do_build_response();
   // --- These synchronous helpers remain ---

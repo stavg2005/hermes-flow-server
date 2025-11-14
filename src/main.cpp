@@ -2,7 +2,6 @@
 #include <boost/beast/http.hpp>
 #include <csignal>
 #include <exception>
-#include <iostream>
 #include <memory>
 #include <thread>
 
@@ -30,8 +29,10 @@ void setup_logging() {
   sinks.push_back(console_sink);
 
   // 3. Create a Rotating File Sink
+  constexpr size_t ONE_KILOBYTE = 1024;
+  constexpr size_t MAX_LOG_FILE_SIZE_MB = 5;  // Maximum log file size in MB
   auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-      "logs/server.log", 1024 * 1024 * 5, 3);
+      "logs/server.log", ONE_KILOBYTE * ONE_KILOBYTE * MAX_LOG_FILE_SIZE_MB, 3);
   file_sink->set_level(spdlog::level::trace);  // FILE_LEVEL
   sinks.push_back(file_sink);
 
@@ -44,13 +45,17 @@ void setup_logging() {
   // 5. Set global levels and format
   spdlog::set_level(spdlog::level::trace);
   spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [thread %t] %v");
+
+  spdlog::flush_every(std::chrono::seconds(1));
 }
 
-int main(int argc, char *argv[]) {
-  // --- 1. Set up logging FIRST ---
-  setup_logging();
 
+
+
+int main(int argc, char *argv[]) {
   try {
+    // --- 1. Set up logging FIRST ---
+    setup_logging();
     // --- 2. Argument Validation ---
     if (argc != 3) {
       spdlog::critical("Usage: hermes_server <address> <port>");
@@ -61,40 +66,43 @@ int main(int argc, char *argv[]) {
     // --- 3. Configuration Parsing ---
     auto const address = net::ip::make_address(argv[1]);
     auto const port = static_cast<unsigned short>(std::atoi(argv[2]));
-    auto const num_threads = std::max(1u, std::thread::hardware_concurrency());
+    auto const num_threads = std::max(1U, std::thread::hardware_concurrency());
 
-    // --- LINTER FIX: WRAP STRINGS IN fmt::runtime() ---
     spdlog::info("Listening on {}:{} with {} I/O threads.", address.to_string(),
                  port, num_threads);
     spdlog::debug("io_context_pool created with {} contexts.", num_threads);
-    // --- END LINTER FIX ---
-
-    // --- 4. I/O Thread Pool ---
     auto pool = std::make_shared<io_context_pool>(num_threads);
-    auto &main_ioc = pool->get_io_context();
-
-    // --- 5. Application Core Components ---
-    auto sessions = ActiveSessions::create();
+    auto sessions = std::make_shared<ActiveSessions>(pool);
     auto router = std::make_shared<Router>(sessions);
+    // --- 4. I/O Thread Pool ---
+
+    pool->run();
+
+    net::io_context main_ioc;
+    // Application Core Components
+
     spdlog::debug("Router and ActiveSessions created.");
 
-    // --- 6. Start Network Listener ---
+    // Start Network Listener
     std::make_shared<listener>(main_ioc, *pool, tcp::endpoint{address, port},
                                router)
         ->run();
 
-    // --- 7. Setup Graceful Shutdown ---
+    // Setup Graceful Shutdown
     net::signal_set signals(main_ioc, SIGINT, SIGTERM);
-    signals.async_wait([pool](beast::error_code const &, int) {
-      spdlog::info("\nShutting down server...");
+    signals.async_wait([&](auto, auto) {
+      // This handler is NON-BLOCKING
+      spdlog::info("Stop signal received...");
+
+      // 1. Tell the pool threads to stop
       pool->stop();
+
+      // 2. Tell the main event loop to stop
+      main_ioc.stop();
     });
     spdlog::trace("Signal set waiting for SIGINT/SIGTERM.");
 
-    // --- 8. Run the Server ---
-    // This blocks the main thread until the pool is stopped.
-    pool->run();
-
+    main_ioc.run();
     // --- 9. Shutdown Complete ---
     spdlog::info("Server shutdown complete.");
 

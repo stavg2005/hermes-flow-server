@@ -12,28 +12,28 @@
 #include "boost/asio/io_context.hpp"
 #include "boost/asio/random_access_file.hpp"
 #include "models/Nodes.hpp"
-using namespace std::chrono_literals;
+#include "spdlog/spdlog.h"
+
 namespace net = boost::asio;
 
-Session::Session(boost::asio::io_context& ex, std::string id, Graph& g)
+Session::Session(boost::asio::io_context& ex, std::string&& id, Graph&& g)
     : io_(ex),
-      id_(id),
+      id_(std::move(id)),
       graph_(std::make_unique<Graph>(std::move(g))),
-      timer_(ex, 20ms),
-      current_node(get_start_node()){
+      timer_(ex, TIMER_TICK) {
+  spdlog::debug("Session with ID {} has been created", id);
+};
 
-      };
-
-void Session::run() {
-  net::co_spawn(
-      io_, [this, self = shared_from_this()]() { return do_start(); },
-      net::detached);
+Node* Session::get_start_node() {  // --- THIS IS THE NEW IMPLEMENTATION ---
+  if (graph_->start_node == nullptr) {
+    throw std::runtime_error("Graph has no valid start_node set.");
+  }
+  return graph_->start_node;
 }
 
-Node* Session::get_start_node() { return nullptr; }
-
-net::awaitable<void> Session::do_start() {
-  auto current_node = get_start_node();
+net::awaitable<void> Session::start() {
+  spdlog::debug("Session with ID {} has started transmiting", id_);
+  current_node = get_start_node();
   try {
     for (;;) {
       auto cycle_start_time = std::chrono::steady_clock::now();
@@ -58,7 +58,7 @@ net::awaitable<void> Session::do_start() {
   } catch (const boost::system::system_error& e) {
     if (e.code() == net::error::operation_aborted) {
     } else {
-      // This was a real network or file error
+      spdlog::error("exception occured in Session ID: {} ", e.what());
     }
   }
 }
