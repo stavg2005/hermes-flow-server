@@ -4,13 +4,11 @@
 #include <stdexcept>  // For std::runtime_error
 #include <string>
 
+#include "S3Client.hpp"
 #include "boost/beast/http/status.hpp"
 #include "boost/beast/http/verb.hpp"  // Use primary boost/json.hpp
 #include "boost/url/url_view.hpp"
-#include "io_context_pool.hpp"
-#include "models/Nodes.hpp"
 #include "spdlog/spdlog.h"
-#include "utils/Json2Graph.hpp"
 
 namespace sys = boost::system;
 namespace bj = boost::json;
@@ -28,6 +26,9 @@ void Router::RouteQuery(const req_t &req, res_t &res) {
       handle_transmit(req, res);
     } else if (path.starts_with("/stop/") && req.method() == http::verb::post) {
       handle_stop(url, res);
+    } else if (path.starts_with("/download/") &&
+               req.method() == http::verb::post) {
+      handle_download(url, res);
     } else {
       throw std::runtime_error("Route not found");
     }
@@ -53,6 +54,23 @@ void Router::handle_stop(boost::urls::url_view &url, res_t &res) {
   throw std::runtime_error("Stop endpoint is not implemented");
 }
 
+void Router::handle_download(boost::urls::url_view &url, res_t &res) {
+  spdlog::info("in handle_download");
+  auto params = url.params();
+  if (!params.contains("file_name")) {
+    throw std::runtime_error("Missing file_name");
+  }
+  spdlog::info("request contains ");
+  auto it = params.find("file_name");
+
+  std::string file_name((*it)->value);
+  auto client = std::shared_ptr<S3Client>();
+
+  auto session = client->CreateSession(pool_->get_io_context());
+
+  session->RequestFile(file_name);
+}
+
 void Router::handle_transmit(const req_t &req, res_t &res) {
   //  Parse JSON
   spdlog::debug("in handle transmit");
@@ -66,7 +84,7 @@ void Router::handle_transmit(const req_t &req, res_t &res) {
   if (!jv.is_object()) {
     throw std::runtime_error("JSON root must be an object");
   }
-  auto id = active_->create_and_run_session( jv.as_object());
+  auto id = active_->create_and_run_session(jv.as_object());
   spdlog::debug("In router created session with id {}", id);
   ResponseBuilder::build_success_response(res, id, req.version());
 }

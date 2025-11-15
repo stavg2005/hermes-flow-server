@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
 
     main_ioc.run();
     // --- 9. Shutdown Complete ---
-    spdlog::info("Server shutdown complete.");
+    spdlog::info("Server shutdown complete bitch.");
 
   } catch (const std::exception &e) {
     spdlog::critical("Fatal Error: {}", e.what());

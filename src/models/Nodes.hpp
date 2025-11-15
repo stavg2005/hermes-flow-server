@@ -8,8 +8,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../utils/config.hpp"
-#include "models/Nodes.hpp"
+#include "config.hpp"
+#include "Nodes.hpp"
 #include "spdlog/spdlog.h"
 
 namespace bj = boost::json;
@@ -57,7 +57,6 @@ struct MixerNode : Node {
 
   explicit MixerNode(Node *t = nullptr) : Node(t) {}
   void ProcessFrame(std::span<uint8_t, FRAME_SIZE> &frame_buffer) override {
-    
     processed_frames += FRAME_SIZE;
   }
 };

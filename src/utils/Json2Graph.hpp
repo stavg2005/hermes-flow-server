@@ -2,7 +2,7 @@
 
 #include <boost/json.hpp>
 
-#include "models/Nodes.hpp"  // Assumed to contain Graph and Node definitions
+#include "Nodes.hpp"  // Assumed to contain Graph and Node definitions
 
 
 namespace bj = boost::json;

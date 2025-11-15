@@ -7,11 +7,11 @@
 #include <memory>
 #include <variant>
 
-#include "../models/Nodes.hpp"
+#include "Nodes.hpp"
 #include "boost/asio/awaitable.hpp"
 #include "boost/asio/io_context.hpp"
 #include "boost/asio/random_access_file.hpp"
-#include "models/Nodes.hpp"
+#include "Nodes.hpp"
 #include "spdlog/spdlog.h"
 
 namespace net = boost::asio;

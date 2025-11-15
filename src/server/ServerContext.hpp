@@ -2,6 +2,7 @@
 #include "Listener.hpp"
 #include "Router.hpp"
 #include <memory>
+#include "S3Client.hpp"
 class ServerContext : std::enable_shared_from_this<ServerContext> {
 
 public:

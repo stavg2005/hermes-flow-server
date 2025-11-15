@@ -10,7 +10,7 @@
 #include <memory>
 #include <unordered_map>
 
-#include "../models/Nodes.hpp"
+#include "Nodes.hpp"
 #include "boost/asio/awaitable.hpp"
 #include "boost/asio/io_context.hpp"
 

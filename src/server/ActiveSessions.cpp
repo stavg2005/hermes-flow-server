@@ -5,11 +5,11 @@
 #include <boost/asio/use_awaitable.hpp>
 #include <memory>
 
-#include "../utils/Json2Graph.hpp"
+#include "Json2Graph.hpp"
 #include "Session.hpp"
 #include "boost/asio/io_context.hpp"
 #include "io_context_pool.hpp"
-#include "models/Nodes.hpp"
+#include "Nodes.hpp"
 #include "spdlog/spdlog.h"
 
 namespace net = boost::asio;

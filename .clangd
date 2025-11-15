@@ -1,3 +1,5 @@
 Diagnostics:
   Suppress:
     - invalid_consteval_call
+CompileFlags:
+  CompilationDatabase: build
