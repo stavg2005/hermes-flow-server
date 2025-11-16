@@ -40,6 +40,12 @@ listener::listener(net::io_context &main_ioc, io_context_pool &pool,
     return;
   }
 
+  acceptor_.set_option(net::socket_base::reuse_address(true), ec);
+  if (ec) {
+    fail(ec, "set_option(reuse_address)");
+    return;
+  }
+
   // Bind to the server address
   ec2 = acceptor_.bind(endpoint, ec);
   if (ec2) {

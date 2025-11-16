@@ -11,10 +11,7 @@ class io_context_pool_exception : public std::runtime_error {
 };
 namespace net = boost::asio;
 
-io_context_pool::io_context_pool(std::size_t pool_size)
-    // --- ADDED ---
-    // Initialize next_io_context_ (was missing)
-    : next_io_context_(0) {
+io_context_pool::io_context_pool(std::size_t pool_size){
   if (pool_size == 0) {
     throw io_context_pool_exception("io_context_pool size must be > 0");
   }
@@ -28,16 +25,18 @@ io_context_pool::io_context_pool(std::size_t pool_size)
 
 io_context_pool::~io_context_pool() {
   try {
-    // We can call stop() again, it's safe.
     stop();
+    // Explicitly join the standard threads here
+    for (auto& t : threads_) {
+      if (t.joinable()) {
+        t.join();
+      }
+    }
   } catch (const std::exception &e) {
-    std::cerr << "Exception during io_context_pool shutdown: " << e.what()
-              << std::endl;
-  } catch (...) {
-    std::cerr << "Unknown exception during io_context_pool shutdown"
-              << std::endl;
+    // ...
   }
 }
+// Remove all other uses of std::jthread in the file
 
 void io_context_pool::run() {
   // Prevent double-run
@@ -67,15 +66,27 @@ void io_context_pool::stop() {
       ioc->stop();  // Stop any blocking ops
     }
   }
-
 }
 
 net::io_context &io_context_pool::get_io_context() {
-  // Get the next io_context
-  spdlog::debug("Fetching IO contect from pool");
-  spdlog::debug("go io context");
-  // Increment and wrap around for the next call
-  std::size_t i = next_io_context_.fetch_add(1, std::memory_order_relaxed);
+  spdlog::debug("Fetching IO context from pool");
+  std::size_t idx = next_io_context_.fetch_add(1, std::memory_order_relaxed) %
+                    io_contexts_.size();
 
-  return *io_contexts_[i % io_contexts_.size()];
+  try {
+    auto &ptr = io_contexts_[idx];
+    spdlog::debug("Shared_ptr use_count = {}", ptr.use_count());
+    if (!ptr) {
+      spdlog::critical("io_context pointer is null at index {}", idx);
+      throw std::runtime_error("null io_context");
+    }
+    spdlog::debug("Returning io_context at index {}", idx);
+    return *ptr;
+  } catch (const std::exception &e) {
+    spdlog::critical("Exception accessing io_context: {}", e.what());
+    throw;
+  } catch (...) {
+    spdlog::critical("Unknown exception accessing io_context at index {}", idx);
+    throw;
+  }
 }

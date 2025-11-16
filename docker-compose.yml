@@ -1,0 +1,38 @@
+# You can delete the "version: 3.8" line, it's obsolete.
+
+services:
+  # --- 1. Your C++ Hermes Server ---
+  hermes_server:
+    build: .
+    command: tail -f /dev/null
+    ports:
+      - "5000:5000"
+    volumes:
+      # This line syncs your source code (GOOD)
+      - .:/app
+      # This line uses the named volume for your build (GOOD)
+      - hermes_build_cache:/app/build
+    depends_on:
+      - minio
+    privileged: true
+    environment:
+      - S3_HOST=minio
+      - S3_PORT=9000
+
+  # --- 2. Your MinIO S3 Server ---
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+# --- THIS IS THE PART YOU ARE MISSING ---
+volumes:
+  hermes_build_cache:
+  minio_data:

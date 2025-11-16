@@ -36,7 +36,7 @@ class io_context_pool {
       net::executor_work_guard<net::io_context::executor_type>;
   std::vector<work_guard_type> work_guards_;
 
-  std::vector<std::jthread> threads_;
+  std::vector<std::thread> threads_;
 
   std::atomic<std::size_t> next_io_context_{0};
 };

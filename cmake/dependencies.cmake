@@ -23,9 +23,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(boost)
 
-# ---- aws-client-sigv4 -------------------------
-# (This file now finds OpenSSL and creates the 'awssigv4' target)
-include(cmake/aws-client-sigv4.cmake)
+find_package(OpenSSL REQUIRED)
+
+
 
 # ---- Linux (io_uring) -------------------------
 set(HERMES_URING_LIBRARIES "")
@@ -60,11 +60,7 @@ target_link_libraries(hermes_dependencies
     Boost::json
     Boost::system
     Boost::url
-    Boost::uuid
     Boost::filesystem
-    awssigv4
-
-    # System/Found targets
     OpenSSL::SSL
     OpenSSL::Crypto
     ${HERMES_URING_LIBRARIES} # This will be blank if not on Linux

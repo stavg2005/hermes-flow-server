@@ -24,9 +24,19 @@ if(HERMES_USE_IO_URING)
     target_compile_definitions(Server
         PRIVATE
             BOOST_ASIO_HAS_IO_URING
-            BOOST_ASIO_DISABLE_EPOLL
     )
 
+    # 2. Link against the liburing library
+    target_link_libraries(Server
+        PRIVATE
+            ${HERMES_URING_LIBRARIES}
+    )
+
+    # 3. Add include directories (usually handled by PkgConfig, but good practice)
+    target_include_directories(Server
+        PRIVATE
+            ${HERMES_URING_INCLUDE_DIRS}
+    )
 endif()
 
 if(WIN32)

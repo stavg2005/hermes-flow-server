@@ -1,0 +1,72 @@
+{
+  "name": "HermesFlow Dev Container",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "hermes_server",
+  "workspaceFolder": "/app",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-vscode.remote-containers",
+        "xaver.clang-format",
+        "sonarsource.sonarlint-vscode"
+      ],
+      "settings": {
+        // --- C++ & Clangd ---
+        "C_Cpp.intelliSenseEngine": "disabled",
+        "C_Cpp.errorSquiggles": "disabled",
+        "C_Cpp.configurationProvider": "ms-vscode.cmake-tools",
+        "C_Cpp.clang_format_style": "file",
+        "C_Cpp.clang_format_path": "/usr/bin/clang-format-21",
+        "clang-format.executable": "/usr/bin/clang-format-21",
+        // --- THIS IS UPDATED ---
+        // Point to the new Clangd 21
+        "clangd.path": "/usr/bin/clangd-21",
+        "clangd.arguments": [
+          "--compile-commands-dir=${command:cmake.buildDirectory}"
+        ],
+
+        // --- CMake ---
+        "cmake.exportCompileCommands": true,
+        "cmake.generator": "Ninja",
+
+        // --- THIS IS UPDATED ---
+        // Point CMake to the new Clang 21 compilers
+        "cmake.configureSettings": {
+          "CMAKE_C_COMPILER": "/usr/bin/clang-21",
+          "CMAKE_CXX_COMPILER": "/usr/bin/clang++-21",
+"CMAKE_CXX_FLAGS": "-stdlib=libc++",
+"CMAKE_EXE_LINKER_FLAGS": "-stdlib=libc++"
+        },
+
+        // --- All your other settings ---
+        "editor.formatOnSave": true,
+        "files.autoSave": "afterDelay",
+        "files.autoSaveDelay": 1000,
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true,
+        "files.associations": {
+          "*.cpp": "cpp",
+          "*.hpp": "cpp",
+          "*.tpp": "cpp",
+          "*.inc": "cpp"
+        },
+        "[cpp]": {
+          "editor.defaultFormatter": "xaver.clang-format"
+        },
+        "search.exclude": {
+          "/node_modules": true,
+          "/bower_components": true,
+          "/build": true,
+          "/*.code-search": true
+        },
+        "sonarlint.pathToCompileCommands": "${workspaceFolder}/build/compile_commands.json"
+      }
+    }
+  },
+  "postCreateCommand": "tail -f /dev/null",
+  "forwardPorts": [5000, 9001],
+  "remoteUser": "root"
+}

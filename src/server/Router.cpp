@@ -4,12 +4,12 @@
 #include <stdexcept>  // For std::runtime_error
 #include <string>
 
-#include "S3Client.hpp"
+#include "boost/asio/io_context.hpp"
 #include "boost/beast/http/status.hpp"
 #include "boost/beast/http/verb.hpp"  // Use primary boost/json.hpp
 #include "boost/url/url_view.hpp"
 #include "spdlog/spdlog.h"
-
+#include "S3Client.hpp"
 namespace sys = boost::system;
 namespace bj = boost::json;
 
@@ -56,6 +56,7 @@ void Router::handle_stop(boost::urls::url_view &url, res_t &res) {
 
 void Router::handle_download(boost::urls::url_view &url, res_t &res) {
   spdlog::info("in handle_download");
+
   auto params = url.params();
   if (!params.contains("file_name")) {
     throw std::runtime_error("Missing file_name");
@@ -64,11 +65,19 @@ void Router::handle_download(boost::urls::url_view &url, res_t &res) {
   auto it = params.find("file_name");
 
   std::string file_name((*it)->value);
-  auto client = std::shared_ptr<S3Client>();
+  auto &ioc = pool_->get_io_context();
+  try {
+    spdlog::info("Creating S3 session for file: {}", file_name);
+    auto session = std::make_shared<S3Session>(ioc);
+    spdlog::info("S3Session created");
+    session->RequestFile(file_name);
+    spdlog::info("RequestFile called");
+  } catch (const std::exception &e) {
+    spdlog::critical("Crash in S3 setup: {}", e.what());
+  } catch (...) {
+    spdlog::critical("Unknown crash in S3 setup");
+  }
 
-  auto session = client->CreateSession(pool_->get_io_context());
-
-  session->RequestFile(file_name);
 }
 
 void Router::handle_transmit(const req_t &req, res_t &res) {

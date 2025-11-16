@@ -18,8 +18,9 @@ using ResponseBuilder = server::models::ResponseBuilder;
 class Router {
  public:
   // Constructor - now takes io_context reference
-  explicit Router(std::shared_ptr<ActiveSessions> active)
-      : active_(std::move(active)) {}
+  explicit Router(std::shared_ptr<ActiveSessions> active,
+                  std::shared_ptr<io_context_pool> pool)
+      : active_(std::move(active)), pool_(std::move(pool)) {}
 
   void route(const http::request<http::string_body> &req,
              http::response<http::string_body> &res);
