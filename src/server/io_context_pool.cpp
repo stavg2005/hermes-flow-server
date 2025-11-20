@@ -26,17 +26,12 @@ io_context_pool::io_context_pool(std::size_t pool_size){
 io_context_pool::~io_context_pool() {
   try {
     stop();
-    // Explicitly join the standard threads here
-    for (auto& t : threads_) {
-      if (t.joinable()) {
-        t.join();
-      }
-    }
+      //jthreads join on their own
   } catch (const std::exception &e) {
     // ...
   }
 }
-// Remove all other uses of std::jthread in the file
+
 
 void io_context_pool::run() {
   // Prevent double-run

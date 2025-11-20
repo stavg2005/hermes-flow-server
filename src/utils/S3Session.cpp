@@ -1,208 +1,278 @@
-// S3Session.cpp (Implementation file)
-
-#if defined(__linux__)
-#define BOOST_ASIO_HAS_IO_URING 1
-#endif
 
 #include "S3Session.hpp"
 
+#include "S3RequestFactory.hpp"
+
+// Core Asio/Beast includes
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/connect.hpp>  // For async_connect
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/stream_file.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/beast/core/buffers_to_string.hpp>
-#include <boost/beast/http/empty_body.hpp>
-#include <boost/beast/http/read.hpp>
-#include <boost/beast/http/status.hpp>
-#include <boost/beast/http/string_body.hpp>
-#include <boost/beast/http/write.hpp>
-#include <boost/system/system_error.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
+#include <boost/beast/http.hpp>
+
+// Standard library includes
 #include <ctime>
 #include <filesystem>
-#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
-#include "awssigv4.h"
-#include "boost/asio/redirect_error.hpp"
+// Project-specific includes
+#include "PartialFileGuard.hpp"
 #include "spdlog/spdlog.h"
 
+// --- Namespaces ---
 namespace beast = boost::beast;
 namespace net = boost::asio;
-using tcp = net::ip::tcp;
 namespace http = beast::http;
-using namespace hcm;
+using tcp = net::ip::tcp;
 
-// --- build_download_request ---
+// --- Constants ---
+static constexpr size_t KILOBYTE = 1024.0;
+static constexpr size_t MEGABYTE = 1024.0 * KILOBYTE;
+static constexpr size_t GIGABYTE = 1024.0 * MEGABYTE;
+static constexpr size_t DEFAULT_CHUNK_SIZE = 512 * KILOBYTE;  // 512 KB
+static constexpr uint64_t MAX_BODY_LIMIT = 2ULL * GIGABYTE;   // 2 GiB cap
+static constexpr size_t PROGRESS_LOG_MB = 100;                // Log every 100MB
+
+// --- build_download_request
 http::request<http::empty_body> S3Session::build_download_request(
     const std::string& file_key) const {
     std::time_t now = std::time(nullptr);
-    Signature sig(cfg_.service, cfg_.host, cfg_.region, cfg_.secret_key, cfg_.access_key, now);
 
-    std::string canonical_uri = "/" + cfg_.bucket + "/" + file_key;
-    const std::string query_string;
-    const std::string payload;
-    std::string payload_hash;
-
-    std::string auth_header = sig.getAuthorization("GET", canonical_uri, query_string, payload,
-                                                   payload_hash, SINGLE_CHUNK);
-
-    http::request<http::empty_body> req{http::verb::get, canonical_uri, 11};
-    req.set(http::field::host, cfg_.host);
-    req.set(http::field::content_type, "application/octet-stream");
-    req.set(http::field::authorization, auth_header);
-    req.set("x-amz-date", sig.getdate());
-    req.set("x-amz-content-sha256", payload_hash);
-
-    return req;
+    auto get_req = S3RequestFactory::create_signed_GET_request(cfg_, http::verb::get, file_key);
+    return get_req;
 }
 
-// --- do_download_file (MEMORY-EFFICIENT: uses raw socket for body) ---
-net::awaitable<void> S3Session::do_download_file(std::string file_key) {
-    spdlog::info(">>>> [MEMORY-EFFICIENT S3 DOWNLOAD v5 - RAW SOCKET] STARTING {} <<<<", file_key);
+// --- Connect ---
+net::awaitable<void> S3Session::connect() {
+    auto results = co_await resolver_.async_resolve(cfg_.host, cfg_.port, net::use_awaitable);
 
-    beast::error_code ec;
+    // async_connect will throw on error by default with use_awaitable
+    co_await net::async_connect(stream_.socket(), results, net::use_awaitable);
+    spdlog::debug("Connected to S3 host: {}", cfg_.host);
+}
+
+// --- Write Request & Read Headers ---
+net::awaitable<std::pair<size_t, beast::flat_buffer>> S3Session::write_request_and_read_headers(
+    const std::string& file_key) {
+    auto req = build_download_request(file_key);
+    co_await http::async_write(stream_, req, net::use_awaitable);
+
+    // This buffer will be *returned*
+    beast::flat_buffer header_buffer;
+    http::response_parser<http::empty_body> parser;
+    parser.body_limit(MAX_BODY_LIMIT);
+
+    co_await http::async_read_header(stream_, header_buffer, parser, net::use_awaitable);
+
+    const auto& response = parser.get();
+
+    if (response.result() != http::status::ok) {
+        // (Error handling logic... unchanged)
+        http::response_parser<http::string_body> error_parser(std::move(parser));
+        co_await http::async_read(stream_, header_buffer, error_parser, net::use_awaitable);
+        std::string error_body = error_parser.get().body();
+
+        spdlog::error("S3 returned error {}: {}", response.result_int(), error_body);
+        throw std::runtime_error("S3 non-OK response: " + std::to_string(response.result_int()));
+    }
+
     size_t expected_size = 0;
-    std::filesystem::path local_path;
+    if (auto it = response.find(http::field::content_length); it != response.end()) {
+        expected_size = std::stoull(std::string(it->value()));
+        spdlog::info("Downloading {} ({:.2f} MB)", file_key, expected_size / (1024.0 * 1024.0));
+    } else {
+        spdlog::warn("S3 response missing Content-Length. Download may be incomplete.");
+    }
+
+    // Return both the size and the buffer
+    co_return std::make_pair(expected_size, std::move(header_buffer));
+}
+
+// This helper prepares the file and returns it. It throws on error.
+std::pair<net::stream_file, std::filesystem::path> S3Session::prepare_local_file(
+    const std::string& file_key) {
+    const std::filesystem::path local_dir = "downloads";
+    const auto filename = std::filesystem::path(file_key).filename();
+    std::filesystem::path local_path = local_dir / filename;
+
+    // Create directories
+    std::error_code dir_ec;
+    std::filesystem::create_directories(local_dir, dir_ec);
+    if (dir_ec) {
+        throw boost::system::system_error(dir_ec, "Failed to create directory");
+    }
+
+    // Open file
+    net::stream_file file(ioc_);
+    beast::error_code ec;
+    file.open(local_path.string(),
+              net::stream_file::write_only | net::stream_file::create | net::stream_file::truncate,
+              ec);
+    if (ec) {
+        throw boost::system::system_error(ec, "Cannot open local file");
+    }
+    spdlog::info("local file prepeard");
+    return {std::move(file), std::move(local_path)};
+}
+
+// Stream Body to File
+net::awaitable<size_t> S3Session::stream_body_to_file(net::stream_file& file, size_t expected_size,
+                                                      beast::flat_buffer& header_buffer) {
+    size_t total_written = 0;
+    size_t last_logged_mb = 0;
+
+    // Write the leftover data from the header_buffer first
+    if (header_buffer.size() > 0) {
+        net::const_buffer to_write = header_buffer.data();
+        size_t written = co_await net::async_write(file, to_write, net::use_awaitable);
+        total_written += written;
+        // Mark the buffer data as "consumed"
+        header_buffer.consume(header_buffer.size());
+    }
+
+    std::array<std::uint8_t, DEFAULT_CHUNK_SIZE> body_buffer;
 
     try {
-        // 1. Resolve + connect using raw socket
-        auto results = co_await resolver_.async_resolve(cfg_.host, cfg_.port, net::use_awaitable);
-        net::connect(stream_.socket(), results, ec);
-        if (ec) {
-            spdlog::error("Connect failed: {}", ec.message());
-            co_return;
-        }
+        // Loop *while* we haven't written the expected size
+        // (If expected_size is 0, we just read until EOF)
+        while (expected_size == 0 || total_written < expected_size) {
+            // Calculate how much we *still* need to read.
+            size_t remaining =
+                (expected_size > 0) ? (expected_size - total_written) : DEFAULT_CHUNK_SIZE;
+            if (remaining == 0) {
+                break;
+            }  // We're done
 
-        // 2. Build and send signed request (still uses Beast stream for HTTP write)
-        auto req = build_download_request(file_key);
-        co_await http::async_write(stream_, req, net::use_awaitable);
+            // Limit our read to the *smaller* of the buffer size or the remaining
+            // amount.
+            size_t bytes_to_read = std::min(DEFAULT_CHUNK_SIZE, remaining);
 
-        // 3. Read only headers — requires dynamic_buffer
+            size_t bytes_read = co_await stream_.async_read_some(
+                net::buffer(body_buffer.data(), bytes_to_read), net::use_awaitable);
 
-        {
-            beast::flat_buffer header_buffer;
-            http::response_parser<http::empty_body> parser;
-            parser.body_limit(2ULL * 1024 * 1024 * 1024);  // 2 GiB cap — adjust to your needs
-
-            co_await http::async_read_header(stream_, header_buffer, parser, net::use_awaitable);
-
-            const auto& response = parser.release();
-            if (response.result() != http::status::ok) {
-                spdlog::error("S3 returned {} for {}", response.result_int(), file_key);
-                co_return;
-            }
-
-            if (auto it = response.find(http::field::content_length); it != response.end()) {
-                expected_size = std::stoull(std::string(it->value()));
-                spdlog::info("Downloading {} ({:.2f} MB)", file_key,
-                             expected_size / (1024.0 * 1024.0));
-            }
-
-            // Free header_buffer capacity immediately:
-            header_buffer = boost::beast::flat_buffer();
-        }
-
-        // 4. Prepare local file
-        const std::filesystem::path local_dir = "downloads";
-        const auto filename = std::filesystem::path(file_key).filename();
-        local_path = local_dir / filename;
-        std::error_code dir_ec;
-        std::filesystem::create_directories(local_dir, dir_ec);
-
-        net::stream_file file(ioc_);
-        file.open(
-            local_path.string(),
-            net::stream_file::write_only | net::stream_file::create | net::stream_file::truncate,
-            ec);
-        if (ec) {
-            spdlog::error("Cannot open local file {}: {}", local_path.string(), ec.message());
-            co_return;
-        }
-
-        // 5. FIXED-SIZE BUFFER FOR BODY STREAMING
-        static constexpr size_t CHUNK_SIZE = 524288;  // 512 KB
-        std::array<std::uint8_t, CHUNK_SIZE> body_buffer;
-
-        size_t total_written = 0;
-        size_t last_logged_mb = 0;
-
-        // 6. Stream body directly to disk — USING RAW SOCKET
-        while (true) {
-            beast::error_code read_ec;
-            size_t bytes_read = co_await stream_.socket().async_read_some(
-                net::buffer(body_buffer), net::redirect_error(read_ec));
-
-            if (read_ec == net::error::eof || bytes_read == 0) {
+            if (bytes_read == 0) {
+                // This shouldn't happen before EOF, but we treat it as such
                 break;
             }
-            if (read_ec) {
-                spdlog::error("Socket read error: {}", read_ec.message());
-                co_return;
-            }
 
+            // Write *only* the bytes we just read
+            // span over the body_buffer
             net::const_buffer to_write(body_buffer.data(), bytes_read);
-            while (to_write.size() > 0) {
-                size_t written = co_await file.async_write_some(to_write, net::use_awaitable);
-                if (written == 0) {
-                    spdlog::error("Disk write returned 0 bytes");
-                    co_return;
-                }
-                to_write += written;
-                total_written += written;
 
-                size_t current_mb = total_written / (1024 * 1024);
-                if (current_mb >= last_logged_mb + 10) {
-                    spdlog::info("... {} MB downloaded", current_mb);
-                    last_logged_mb = current_mb;
-                }
-            }
+            /* file.async_write_some may not write the entire data so we use the solution boost
+             * suggested by using async_write */
+            total_written += co_await net::async_write(file, to_write, net::use_awaitable);
 
-            if (expected_size > 0 && total_written >= expected_size) {
-                break;
+            // Log progress
+            size_t current_mb = total_written / (1024.0 * 1024.0);
+            if (current_mb >= last_logged_mb + PROGRESS_LOG_MB) {
+                spdlog::info("... {} MB downloaded", current_mb);
+                last_logged_mb = current_mb;
             }
         }
+    } catch (const boost::system::system_error& e) {
+        if (e.code() == net::error::eof) {
+            if (expected_size > 0 && total_written < expected_size) {
+                throw std::runtime_error("Connection closed prematurely (Incomplete Download)");
+            }
+            spdlog::debug("Socket EOF received. Download complete.");
 
-        // 7. Cleanup
+        } else {
+            throw;  // Re-throw any other error
+        }
+    }
+
+    // Check if we got what we expected (if we knew the size)
+    if (expected_size > 0 && total_written != expected_size) {
+        spdlog::warn("Download finished, but size mismatch. Expected {}, Got {}.", expected_size,
+                     total_written);
+    }
+
+    co_return total_written;
+}
+
+void S3Session::cleanup_socket() {
+    beast::error_code ec;  // Ignore errors on cleanup
+    stream_.socket().shutdown(tcp::socket::shutdown_both, ec);
+    stream_.socket().close(ec);
+}
+
+net::awaitable<void> S3Session::do_download_file(std::string file_key) {
+    spdlog::info(">>>> [S3 DOWNLOAD] STARTING {} <<<<", file_key);
+    stream_.expires_never();
+    net::stream_file file(ioc_);
+    // if goes out of scope without disarming file would be deleted (RAII pattern)
+    std::unique_ptr<PartialFileGuard> file_guard;
+
+    try {
+        co_await connect();
+
+        // These will be populated by the helper
+        size_t expected_size = 0;
+        beast::flat_buffer header_buffer;
+
+        // Step 2: Get headers AND the leftover buffer
+        std::tie(expected_size, header_buffer) = co_await write_request_and_read_headers(file_key);
+
+        // Step 3: Prepare local file
+        std::filesystem::path local_path;
+        std::tie(file, local_path) = prepare_local_file(file_key);
+
+        file_guard = std::make_unique<PartialFileGuard>(std::move(local_path));
+
+        // Step 4: Stream the body, passing in the leftover buffer
+        size_t total_written = co_await stream_body_to_file(file, expected_size, header_buffer);
+
+        // (Success and cleanup logic... unchanged)
+        beast::error_code ec;
         file.close(ec);
+        file_guard->disarm();
+
         spdlog::info("SUCCESS: Downloaded {} — {} bytes ({:.2f} MB)", file_key, total_written,
                      total_written / (1024.0 * 1024.0));
 
-        // Graceful shutdown
-        stream_.socket().shutdown(tcp::socket::shutdown_both, ec);
-    } catch (const boost::system::system_error& e) {
-        spdlog::error("Download failed for '{}': {} (code: {})", file_key, e.what(),
-                      e.code().value());
-        if (!local_path.empty() && std::filesystem::exists(local_path)) {
-            std::filesystem::remove(local_path);
-        }
-    } catch (const std::exception& e) {
-        spdlog::error("Unexpected exception for '{}': {}", file_key, e.what());
+    } catch (...) {
+        cleanup_socket();
+        throw;
     }
 
-    stream_.socket().close(ec);
+    cleanup_socket();
     co_return;
 }
 
-// --- RequestFile ---
-void S3Session::RequestFile(std::string file) {
+// --- RequestFile (Entry Point) ---
+void S3Session::RequestFile(std::string file_key) {
+    // Make a copy of the key for the error handler
+    auto key_for_handler = file_key;
+
     net::co_spawn(
         ioc_,
-        [self = shared_from_this(), file_key = std::move(file)]() -> net::awaitable<void> {
-            co_return co_await self->do_download_file(file_key);
+        [self = shared_from_this(), fk = std::move(file_key)]() -> net::awaitable<void> {
+            // Move the file_key into the coroutine
+            co_return co_await self->do_download_file(fk);
         },
-        [self = shared_from_this(), key = file](std::exception_ptr p) {
+        // This handler now *only* logs unhandled exceptions that escape the coroutine.
+        [self = shared_from_this(), key = std::move(key_for_handler)](
+            const std::exception_ptr&
+                p) {  // standarts exceptions cant survive past callback and diffrent threads
             if (p) {
                 try {
+                    // std::exception_ptr is type-erased (opaque). We must rethrow it
+                    // here to restore its type information so the catch block works.
                     std::rethrow_exception(p);
-                } catch (const boost::system::system_error& e) {
-                    spdlog::error("S3Session failed for file '{}' (host: {}) with system error: {}",
-                                  key, self->cfg_.host, e.what());
                 } catch (const std::exception& e) {
-                    spdlog::error("S3Session failed for file '{}' (host: {}) with exception: {}",
-                                  key, self->cfg_.host, e.what());
+                    // This is now the *single* point of failure logging.
+                    spdlog::error("S3Session failed for file '{}' (host: {}) with error: {}", key,
+                                  self->cfg_.host, e.what());
+                } catch (...) {
+                    spdlog::error("S3Session CRITICAL: Unknown non-standard exception caught!");
                 }
             }
         });

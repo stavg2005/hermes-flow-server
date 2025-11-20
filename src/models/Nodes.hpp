@@ -66,8 +66,6 @@ struct FileInputNode : Node {
   std::string file_path;
   Double_Buffer bf;
 
-  // --- NEW ---
-  // Added gain, which will be parsed from the options
   double gain{1.0};
 
   explicit FileInputNode(Node *t = nullptr) : Node(t) {}

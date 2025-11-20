@@ -48,7 +48,7 @@ void setup_logging() {
     spdlog::flush_on(spdlog::level::debug);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     std::shared_ptr<listener> listener_ptr;
     try {
         // --- 1. Set up logging FIRST ---
@@ -67,16 +67,19 @@ int main(int argc, char *argv[]) {
 
         spdlog::info("Listening on {}:{} with {} I/O threads.", address.to_string(), port,
                      num_threads);
-        spdlog::debug("io_context_pool created with {} contexts.", num_threads);
+
         auto pool = std::make_shared<io_context_pool>(num_threads);
+
+        spdlog::debug("io_context_pool created with {} contexts.", num_threads);
+
         auto sessions = std::make_shared<ActiveSessions>(pool);
+
         auto router = std::make_shared<Router>(sessions, pool);
         // --- 4. I/O Thread Pool ---
 
         pool->run();
 
         net::io_context main_ioc;
-        // Application Core Components
 
         spdlog::debug("Router and ActiveSessions created.");
 
@@ -102,7 +105,7 @@ int main(int argc, char *argv[]) {
         // --- 9. Shutdown Complete ---
         spdlog::info("Server shutdown complete bitch.");
 
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         spdlog::critical("Fatal Error: {}", e.what());
         return EXIT_FAILURE;
     }

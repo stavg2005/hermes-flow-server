@@ -15,7 +15,7 @@
 #include "boost/asio/io_context.hpp"
 
 
-class Graph;  // Editable graph
+class Graph;
 namespace net = boost::asio;
 class Session : public std::enable_shared_from_this<Session> {
  public:
@@ -45,6 +45,10 @@ class Session : public std::enable_shared_from_this<Session> {
       std::span<uint8_t, 160> &frame_buffer);
 
   void getFrame();
+
+  void FetchFiles(){
+
+  }
 
   boost::asio::io_context &io_;
 

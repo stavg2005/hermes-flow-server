@@ -49,11 +49,10 @@ std::string ActiveSessions::create_and_run_session(const bj::object& jobj) {
 
   net::co_spawn(
       io,
-      // FIX 2: Add the coroutine return type to the lambda
       [this, self = shared_from_this(), key,
        session_ptr]() -> net::awaitable<void> {
         try {
-          // This now correctly co_awaits the public start() coroutine
+         
           co_await session_ptr->start();
         } catch (const std::exception& e) {
           spdlog::error("Error has occured in Session {}", e.what());
