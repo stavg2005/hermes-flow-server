@@ -4,6 +4,7 @@
 #include <boost/asio/detached.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <chrono>
+#include <exception>
 #include <memory>
 #include <variant>
 
@@ -12,7 +13,6 @@
 #include "boost/asio/io_context.hpp"
 #include "boost/asio/random_access_file.hpp"
 #include "spdlog/spdlog.h"
-
 
 namespace net = boost::asio;
 
@@ -31,9 +31,43 @@ Node* Session::get_start_node() {
     return graph_->start_node;
 }
 
+bool FileExist(std::string& file_name) {
+    // TODO actually check if file already in directory
+    return false;
+}
+
+net::awaitable<void> Session::FetchFiles() {
+    spdlog::info("fetching fiiles for Session ID {}", id_);
+    for (const auto& node : graph_->nodes) {
+        spdlog::info("salsa ipicante");
+        if (node->kind == NodeKind::FileInput) {
+            try {
+                spdlog::info("file-input found", id_);
+                auto* FileInputPtr = dynamic_cast<FileInputNode*>(node.get());
+                if (!FileInputPtr) {
+                    spdlog::critical("cast faild for node {}", node->id);
+                    break;
+                }
+                if (FileExist(FileInputPtr->file_name)) {
+                    break;
+                }
+                auto session = std::make_shared<S3Session>(io_);
+                co_await session->RequestFile(FileInputPtr->file_name);
+            } catch (std::exception ec) {
+                spdlog::error("an exception has occoured while fetching files {}", ec.what());
+            }
+        }
+    }
+}
+
 net::awaitable<void> Session::start() {
-    spdlog::debug("Session with ID {} has started transmiting", id_);
+    co_await FetchFiles();
+
+    spdlog::info("fetched files for Session ID {}", id_);
+
     current_node = get_start_node();
+    co_await current_node->InitilizeBuffers();
+    spdlog::info("current node {}", current_node->id);
     try {
         for (;;) {
             auto cycle_start_time = std::chrono::steady_clock::now();
@@ -62,29 +96,22 @@ net::awaitable<void> Session::start() {
     }
 }
 
-net::awaitable<void> Session::Process_Current_Node_Frame(std::span<uint8_t, 160>& frame_buffer) {
+net::awaitable<void> Session::Process_Current_Node_Frame(std::span<uint8_t, 160> frame_buffer) {
     current_node->ProcessFrame(frame_buffer);
-    current_node->processed_frames += FRAME_SIZE;
 
     // Check if this frame was the last one for this node.
-    if (current_node->processed_frames == current_node->total_frames) {
+    if (current_node->processed_frames>= current_node->total_frames) {
         current_node = current_node->target;
+        spdlog::info("new current  node {}", current_node->id);
         co_return;
     }
 
-    if (current_node->processed_frames >= REFILL_THRESHOLD) {
-        co_await RefillRequest();
-
-        current_node->processed_frames = 0;
-    }
 
     co_return;
 }
 
-net::awaitable<void> Session::Packetize_And_Transmit_Frame(std::span<uint8_t, 160>& frame_buffer) {
+net::awaitable<void> Session::Packetize_And_Transmit_Frame(std::span<uint8_t, 160> frame_buffer) {
     co_return;
 }
 
-net::awaitable<void> Session::RefillRequest() {
-    co_return;
-}
+

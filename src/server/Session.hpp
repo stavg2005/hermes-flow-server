@@ -11,55 +11,47 @@
 #include <unordered_map>
 
 #include "Nodes.hpp"
+#include "S3Client.hpp"
+#include "S3Session.hpp"
 #include "boost/asio/awaitable.hpp"
 #include "boost/asio/io_context.hpp"
-
+#include "boost/smart_ptr/intrusive_ptr.hpp"
 
 class Graph;
 namespace net = boost::asio;
 class Session : public std::enable_shared_from_this<Session> {
- public:
-  Session(boost::asio::io_context &ex, std::string &&Id, Graph &&g);
- net::awaitable<void> start();
+   public:
+    Session(boost::asio::io_context& ex, std::string&& Id, Graph&& g);
+    net::awaitable<void> start();
 
- net::awaitable<void> stop();
+    net::awaitable<void> stop();
 
+   private:
+    Node* get_start_node();
+    net::awaitable<void> do_start();
 
+    net::awaitable<void> do_stop();
 
+    net::awaitable<void> RefillRequest();
 
+    net::awaitable<void> Process_Current_Node_Frame(std::span<uint8_t, 160> frame_buffer);
 
- private:
+    net::awaitable<void> Packetize_And_Transmit_Frame(std::span<uint8_t, 160> frame_buffer);
 
+    void getFrame();
 
-  Node *get_start_node();
-  net::awaitable<void> do_start();
+    net::awaitable<void> FetchFiles();
 
-  net::awaitable<void> do_stop();
+    boost::asio::io_context& io_;
 
-  net::awaitable<void> RefillRequest();
+    const std::string id_;
 
-  net::awaitable<void> Process_Current_Node_Frame(
-      std::span<uint8_t, 160> &frame_buffer);
+    Node* current_node;
 
-  net::awaitable<void> Packetize_And_Transmit_Frame(
-      std::span<uint8_t, 160> &frame_buffer);
+    std::unique_ptr<const Graph> graph_;
 
-  void getFrame();
+    net::cancellation_signal stop_signal;
 
-  void FetchFiles(){
-
-  }
-
-  boost::asio::io_context &io_;
-
-  const std::string id_;
-
-  Node *current_node;
-
-  std::unique_ptr<const Graph> graph_;
-
-  net::cancellation_signal stop_signal;
-
-  boost::asio::steady_timer timer_;
-  std::array<uint8_t, FRAME_SIZE> frame_data_{0};
+    boost::asio::steady_timer timer_;
+    std::array<uint8_t, FRAME_SIZE> frame_data_{0};
 };

@@ -76,7 +76,7 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
      *
      * @param file_key The object key (path) of the file in the S3 bucket.
      */
-    void RequestFile(std::string file_key);
+    net::awaitable<void> RequestFile(std::string file_key);
 
    private:
     /**
@@ -133,6 +133,9 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
      * @brief Performs a graceful shutdown and close of the socket.
      */
     void cleanup_socket();
+
+
+    void fetch_files();
 
     // --- Member Variables ---
     net::io_context& ioc_;  // Must be declared before members that use it

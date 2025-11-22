@@ -248,32 +248,26 @@ net::awaitable<void> S3Session::do_download_file(std::string file_key) {
 }
 
 // --- RequestFile (Entry Point) ---
-void S3Session::RequestFile(std::string file_key) {
+net::awaitable<void> S3Session::RequestFile(std::string file_key) {
     // Make a copy of the key for the error handler
     auto key_for_handler = file_key;
 
-    net::co_spawn(
-        ioc_,
-        [self = shared_from_this(), fk = std::move(file_key)]() -> net::awaitable<void> {
-            // Move the file_key into the coroutine
-            co_return co_await self->do_download_file(fk);
-        },
-        // This handler now *only* logs unhandled exceptions that escape the coroutine.
-        [self = shared_from_this(), key = std::move(key_for_handler)](
-            const std::exception_ptr&
-                p) {  // standarts exceptions cant survive past callback and diffrent threads
-            if (p) {
-                try {
-                    // std::exception_ptr is type-erased (opaque). We must rethrow it
-                    // here to restore its type information so the catch block works.
-                    std::rethrow_exception(p);
-                } catch (const std::exception& e) {
-                    // This is now the *single* point of failure logging.
-                    spdlog::error("S3Session failed for file '{}' (host: {}) with error: {}", key,
-                                  self->cfg_.host, e.what());
-                } catch (...) {
-                    spdlog::error("S3Session CRITICAL: Unknown non-standard exception caught!");
-                }
+    try {
+        co_await do_download_file(file_key);
+    } catch (const std::exception_ptr&
+                 p) {  // standarts exceptions cant survive past callback and diffrent threads
+        if (p) {
+            try {
+                // std::exception_ptr is type-erased (opaque). We must rethrow it
+                // here to restore its type information so the catch block works.
+                std::rethrow_exception(p);
+            } catch (const std::exception& e) {
+                // This is now the *single* point of failure logging.
+                spdlog::error("S3Session failed for file '{}' (host: {}) with error: {}", file_key,
+                              cfg_.host, e.what());
+            } catch (...) {
+                spdlog::error("S3Session CRITICAL: Unknown non-standard exception caught!");
             }
-        });
+        }
+    }
 }

@@ -16,10 +16,10 @@ namespace net = boost::asio;
 ActiveSessions::ActiveSessions(std::shared_ptr<io_context_pool> pool)
     : pool_(std::move(pool)) {};
 
-std::string ActiveSessions::create_and_run_session(const bj::object& jobj) {
+std::string ActiveSessions::create_and_run_session(const bj::object &jobj) {
   std::string key = std::to_string(next_session_id_++);
   std::string id_for_session = key;
-  Graph g = parse_graph(jobj);
+  Graph g = parse_graph(pool_->get_io_context(),jobj);
   spdlog::debug("Graph for session {} has {} nodes.", id_for_session,
                 g.nodes.size());
   if (!pool_) {
@@ -52,7 +52,7 @@ std::string ActiveSessions::create_and_run_session(const bj::object& jobj) {
       [this, self = shared_from_this(), key,
        session_ptr]() -> net::awaitable<void> {
         try {
-         
+
           co_await session_ptr->start();
         } catch (const std::exception& e) {
           spdlog::error("Error has occured in Session {}", e.what());

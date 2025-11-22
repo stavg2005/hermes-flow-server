@@ -4,7 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
+#include "boost/json.hpp"
 #include "Session.hpp"
 #include "boost/asio/io_context.hpp"
 #include "io_context_pool.hpp"
@@ -15,7 +15,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
   explicit ActiveSessions(std::shared_ptr<io_context_pool> pool);
 
   // Create + run a session; returns the shared_ptr and its id.
-  std::string create_and_run_session(const bj::object &jobj);
+  std::string create_and_run_session(const boost::json::object &jobj);
 
   bool remove_session(const Id &id);
 
