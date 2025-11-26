@@ -25,7 +25,7 @@ Session::Session(boost::asio::io_context& ex, std::string&& id, Graph&& g)
       graph_(std::make_unique<Graph>(std::move(g))),
       timer_(ex),
       packetizer_(PAYLOAD_TYPE, generate_ssrc(), SAMPLES_PER_FRAME),
-      transmitter_(io_, "host.docker.internal", 6000) {
+      transmitter_(io_, "127.0.0.1", 6000) {
     spdlog::debug("Session with ID {} has been created", id);
 };
 
@@ -75,10 +75,26 @@ net::awaitable<void> Session::start() {
     spdlog::info("current node {}", current_node->id);
     auto next_tick_time = std::chrono::steady_clock::now();
     const auto interval = std::chrono::milliseconds(20);
+    bool first_run = true;
     try {
         for (;;) {
-            next_tick_time += interval;
+            auto now = std::chrono::steady_clock::now();
 
+            // ----------------------------------------------------------------
+            // 1. LAG DETECTION (The Fix)
+            // ----------------------------------------------------------------
+            if (first_run) {
+                next_tick_time = now;
+                first_run = false;
+            } else if (now > next_tick_time + std::chrono::milliseconds(100)) {
+                // We are >100ms behind schedule.
+                // If we continue, we will burst 5+ packets instantly.
+                // STOP. Reset the clock.
+                spdlog::warn("[Session] System lag detected! Skipping missed ticks.");
+                next_tick_time = now;
+            }
+
+            next_tick_time += interval;
             std::span<uint8_t, FRAME_SIZE_BYTES> frame_buffer_(frame_data_.data(),
                                                                FRAME_SIZE_BYTES);
             // process the frame into the buffer
@@ -112,13 +128,23 @@ net::awaitable<void> Session::Process_Current_Node_Frame(
 
 net::awaitable<void> Session::Packetize_And_Transmit_Frame(
     std::span<uint8_t, FRAME_SIZE_BYTES> frame_buffer) {
-    std::span<uint8_t, FRAME_SIZE_BYTES> packet_span(packet_buffer.data(), FRAME_SIZE_BYTES);
+    // 1. ALLOCATE: Create a container that owns its own memory
+    // (Using make_shared is efficient and usually performs 1 allocation)
+    auto packet_owner = std::make_shared<std::vector<uint8_t>>(FRAME_SIZE_BYTES);
 
+    // 2. WRAP: Create a span so your existing code can write into it
+    std::span<uint8_t> packet_span(packet_owner->data(), FRAME_SIZE_BYTES);
+
+    // 3. WRITE: Write audio directly into the final memory (Zero Copy!)
+    // Your packet2rtp writes directly into packet_owner's memory via the span
     auto packet_size = PacketUtils::packet2rtp(frame_buffer, packetizer_, packet_span);
+
     has_frame_ = packet_size > 0;
 
     if (has_frame_) {
-        transmitter_.asyncSend(packet_span, packet_size);
+        // 4. TRANSFER: specific ownership to the transmitter
+        // No memcpy happens here. We just pass the pointer.
+        transmitter_.asyncSend(std::move(packet_owner), packet_size);
     }
 
     co_return;

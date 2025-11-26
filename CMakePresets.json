@@ -1,0 +1,25 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-clang-vcpkg",
+      "displayName": "Windows Clang + Vcpkg",
+      "description": "Ninja build using Clang and Vcpkg on Windows",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_TOOLCHAIN_FILE": "C:/Users/Stav/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "OPENSSL_ROOT_DIR": "C:/Users/Stav/vcpkg/installed/x64-windows",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ]
+}
