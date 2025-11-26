@@ -20,7 +20,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # =============================================================================
-# Options
+# Options & Sanitizers
 # =============================================================================
 
 option(ENABLE_ASAN  "Enable AddressSanitizer" OFF)
@@ -31,25 +31,22 @@ if(ENABLE_ASAN AND ENABLE_TSAN)
     message(FATAL_ERROR "ASan and TSan cannot be used together")
 endif()
 
-# =============================================================================
-# Platform Configuration
-# =============================================================================
-
 if(WIN32)
     add_definitions(
         -D_WIN32_WINNT=0x0601
         -DWIN32_LEAN_AND_MEAN
         -DNOMINMAX
+        -D_CRT_SECURE_NO_WARNINGS
     )
 endif()
 
 # =============================================================================
-# Dependencies
+# Dependencies (FetchContent)
 # =============================================================================
 
 include(FetchContent)
 
-# spdlog
+# 1. spdlog
 set(SPDLOG_USE_STD_FORMAT ON CACHE BOOL "" FORCE)
 FetchContent_Declare(spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
@@ -57,14 +54,14 @@ FetchContent_Declare(spdlog
     GIT_SHALLOW    TRUE
 )
 
-# Boost
+# 2. Boost
 set(BOOST_INCLUDE_LIBRARIES asio beast json system url uuid filesystem)
 FetchContent_Declare(boost
     URL https://github.com/boostorg/boost/releases/download/boost-1.88.0/boost-1.88.0-cmake.zip
     DOWNLOAD_EXTRACT_TIMESTAMP ON
 )
 
-# AWS SigV4
+# 3. AWS SigV4
 FetchContent_Declare(aws_sigv4
     GIT_REPOSITORY https://github.com/zxwind/aws-sigv4-cpp.git
     GIT_TAG        master
@@ -73,10 +70,10 @@ FetchContent_Declare(aws_sigv4
 
 FetchContent_MakeAvailable(spdlog boost aws_sigv4)
 
-# OpenSSL
+# 4. OpenSSL
 find_package(OpenSSL REQUIRED)
 
-# AWS SigV4 Library Target
+# 5. AWS SigV4 Lib Setup
 add_library(awssigv4 STATIC
     ${aws_sigv4_SOURCE_DIR}/awssigv4.cc
     ${aws_sigv4_SOURCE_DIR}/awssigv4.h
@@ -84,7 +81,7 @@ add_library(awssigv4 STATIC
 target_include_directories(awssigv4 PUBLIC ${aws_sigv4_SOURCE_DIR})
 target_link_libraries(awssigv4 PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 
-# io_uring (Linux only)
+# 6. io_uring (Linux only)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig QUIET)
     if(PKG_CONFIG_FOUND)
@@ -100,7 +97,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 # =============================================================================
-# Common Dependencies Interface
+# Common Interface (Flags & Links)
 # =============================================================================
 
 add_library(hermes_dependencies INTERFACE)
@@ -119,61 +116,83 @@ target_link_libraries(hermes_dependencies INTERFACE
 )
 
 if(HERMES_USE_IO_URING)
-    target_compile_definitions(hermes_dependencies INTERFACE
-        BOOST_ASIO_HAS_IO_URING=1
-    )
-    target_include_directories(hermes_dependencies INTERFACE
-        ${URING_INCLUDE_DIRS}
-    )
-    target_link_libraries(hermes_dependencies INTERFACE
-        ${URING_LIBRARIES}
-    )
+    target_compile_definitions(hermes_dependencies INTERFACE BOOST_ASIO_HAS_IO_URING=1)
+    target_include_directories(hermes_dependencies INTERFACE ${URING_INCLUDE_DIRS})
+    target_link_libraries(hermes_dependencies INTERFACE ${URING_LIBRARIES})
 endif()
 
 # =============================================================================
-# Project Libraries
+# Project Sources (Grouped by Folder)
 # =============================================================================
 
-# Models (Header-only)
-add_library(models INTERFACE)
-target_include_directories(models INTERFACE src/models)
-
-# Utils
-add_library(utils STATIC
-    src/utils/Json2Graph.cpp
-    src/utils/S3Session.cpp
-    src/utils/S3Client.cpp
-    src/utils/packet.cpp
-    src/utils/alaw.cpp
-    src/utils/RTPPacketizer.cpp
-    src/utils/config.cpp
+# Infrastructure (Audio, IO, Parsers)
+set(SOURCES_INFRA
+    src/infra/audio/alaw.cpp
+    src/infra/io/io_context_pool.cpp
+    src/infra/parsers/Json2Graph.cpp
+    src/core/config/config.cpp
 )
-target_include_directories(utils PUBLIC src/utils)
-target_link_libraries(utils PUBLIC models hermes_dependencies)
 
-# Server
-add_library(server STATIC
-    src/server/ActiveSessions.cpp
-    src/server/http_session.cpp
-    src/server/io_context_pool.cpp
-    src/server/Listener.cpp
-    src/server/Router.cpp
-    src/server/Session.cpp
-    src/server/Server.cpp
-    src/server/RTPTransmitter.cpp
+# Network (HTTP, RTP, S3)
+set(SOURCES_NETWORK
+    src/network/s3/S3Client.cpp
+    src/network/s3/S3Session.cpp
+    src/network/rtp/packet.cpp
+    src/network/rtp/RTPPacketizer.cpp
+    src/network/rtp/RTPTransmitter.cpp
+    src/network/http/http_session.cpp
+    src/network/http/Listener.cpp
+    src/network/http/Router.cpp
+    src/network/http/Server.cpp
 )
-target_include_directories(server PUBLIC src/server)
-target_link_libraries(server PUBLIC utils hermes_dependencies)
+
+# Core Logic (Sessions, Graph)
+set(SOURCES_CORE
+    src/core/session/ActiveSessions.cpp
+    src/core/session/Session.cpp
+    src/core/graph/NodeRegistry.cpp
+)
 
 # =============================================================================
-# Executable
+# Main Library (The Engine)
 # =============================================================================
 
-add_executable(Server src/main.cpp)
-target_link_libraries(Server PRIVATE server)
+add_library(hermes_engine STATIC
+    ${SOURCES_INFRA}
+    ${SOURCES_NETWORK}
+    ${SOURCES_CORE}
+)
+
+target_include_directories(hermes_engine PUBLIC
+    src                             # Allows: #include "core/session/Session.hpp"
+    src/core/session                # Allows: #include "Session.hpp"
+    src/core/graph                  # Allows: #include "Nodes.hpp"
+    src/core/config                 # Allows: #include "Config.hpp"
+    src/network/http
+    src/network/rtp
+    src/network/s3
+    src/network/websocket
+    src/infra/audio
+    src/infra/io
+    src/infra/parsers
+)
+
+target_link_libraries(hermes_engine PUBLIC hermes_dependencies)
+
+
+target_link_libraries(hermes_engine PUBLIC hermes_dependencies)
 
 # =============================================================================
-# Sanitizers
+# Main Executable
+# =============================================================================
+
+# Note: Assuming you moved main.cpp to src/app/
+add_executable(Server src/app/main.cpp)
+
+target_link_libraries(Server PRIVATE hermes_engine)
+
+# =============================================================================
+# Sanitizer Flags (Applied to Executable)
 # =============================================================================
 
 if(ENABLE_ASAN OR ENABLE_UBSAN OR ENABLE_TSAN)
@@ -194,10 +213,6 @@ if(ENABLE_ASAN OR ENABLE_UBSAN OR ENABLE_TSAN)
 
         target_compile_options(Server PRIVATE ${SANITIZER_COMPILE_FLAGS})
         target_link_options(Server PRIVATE ${SANITIZER_COMPILE_FLAGS})
-
-        message(STATUS "Sanitizers: ${SANITIZER_FLAGS_STR}")
-    else()
-        message(WARNING "Sanitizers only supported with Clang/GCC")
     endif()
 endif()
 
