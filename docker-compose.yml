@@ -5,8 +5,7 @@ services:
   hermes_server:
     build: .
     command: tail -f /dev/null
-    ports:
-      - "5000:5000"
+    network_mode: "host"
     volumes:
       - .:/app
       - hermes_build_cache:/app/build
@@ -14,7 +13,7 @@ services:
       - minio
     privileged: true
     environment:
-      - S3_HOST=minio
+      - S3_HOST=localhost
       - S3_PORT=9000
 
   # --- 2. Your MinIO S3 Server ---

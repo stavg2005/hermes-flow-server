@@ -143,6 +143,10 @@ add_library(utils STATIC
     src/utils/Json2Graph.cpp
     src/utils/S3Session.cpp
     src/utils/S3Client.cpp
+    src/utils/packet.cpp
+    src/utils/alaw.cpp
+    src/utils/RTPPacketizer.cpp
+    src/utils/config.cpp
 )
 target_include_directories(utils PUBLIC src/utils)
 target_link_libraries(utils PUBLIC models hermes_dependencies)
@@ -155,6 +159,8 @@ add_library(server STATIC
     src/server/Listener.cpp
     src/server/Router.cpp
     src/server/Session.cpp
+    src/server/Server.cpp
+    src/server/RTPTransmitter.cpp
 )
 target_include_directories(server PUBLIC src/server)
 target_link_libraries(server PUBLIC utils hermes_dependencies)

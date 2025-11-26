@@ -12,7 +12,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
 // Boost Includes
 #include <boost/asio.hpp>
 #include <boost/system/error_code.hpp>
@@ -33,8 +32,8 @@ enum class NodeKind { FileInput, Mixer, Delay, Clients, FileOptions };
 struct Double_Buffer {
     std::filesystem::path path;
     double gain{1.0};
+    std::atomic<bool> back_buffer_ready{false};
 
-    // Private implementation details
    private:
     std::array<std::vector<uint8_t>, 2> blocks_;
     int read_index_ = 0;
@@ -47,7 +46,11 @@ struct Double_Buffer {
     }
 
     // Returns the buffer the Audio Thread reads from
-    std::span<uint8_t> GetReadSpan() { return blocks_[read_index_]; }
+    std::span<uint8_t> GetReadSpan() {
+        auto buffer =
+            std::span(blocks_[read_index_].data() + WAV_HEADER_SIZE, BUFFER_SIZE - WAV_HEADER_SIZE);
+        return buffer;
+    }
 
     // Returns the buffer the IO Thread writes to (the "Back" buffer)
     std::span<uint8_t> GetWriteSpan() {
@@ -55,9 +58,17 @@ struct Double_Buffer {
         return blocks_[read_index_ ^ 1];
     }
 
+    void set_read_index(int value) {
+        if (value != 0 && value != 1) {
+            return;
+        }
+        read_index_ = value;
+    }
+
     // Called by Audio Thread when it finishes reading a block
     void Swap() {
-        read_index_ ^= 1;  // Toggles 0 -> 1, 1 -> 0
+        read_index_ ^= 1;
+        back_buffer_ready = false;
     }
 
     size_t Size() const { return BUFFER_SIZE; }
@@ -98,7 +109,7 @@ struct FileInputNode : Node, std::enable_shared_from_this<FileInputNode> {
           file_name(std::move(name)),
           file_path(std::move(path)),
           file_handle(io),
-          refill_threshold_frames(BUFFER_SIZE / FRAME_SIZE / 2) {  // Default to half buffer
+          refill_threshold_frames(BUFFER_SIZE / FRAME_SIZE_BYTES / 2) {  // Default to half buffer
 
         kind = NodeKind::FileInput;
         bf.path = file_path;
@@ -114,58 +125,67 @@ struct FileInputNode : Node, std::enable_shared_from_this<FileInputNode> {
         }
 
         if (file_handle.is_open()) {
-            total_frames = file_handle.size() / FRAME_SIZE;
+            total_frames = file_handle.size() / FRAME_SIZE_BYTES;
             spdlog::info("[{}] File opened. Total frames: {}", id, total_frames);
         }
     }
 
     asio::awaitable<void> InitilizeBuffers() override {
-        // Ensure file is open
         if (!file_handle.is_open()) Open();
 
-        // Fill the "Write" buffer (initially back buffer)
+        // 1. Fill Buffer 0
+        bf.set_read_index(1);  // Point to Back (index 1)
         co_await RequestRefillAsync();
+        bf.back_buffer_ready = true;
+        bf.Swap();  // Buffer 0 is now Front (Active), Buffer 1 is Back (Empty)
+
+        // 2. Fill Buffer 1 (Synchronously wait for it!)
+        // We do NOT use co_spawn here. We await it directly.
+        // This ensures we don't start playing until we have a safety net.
+        co_await RequestRefillAsync();
+        bf.back_buffer_ready = true;  // Now both buffers are full.
+
+        spdlog::info("[{}] Buffers Initialized. Ready to play.", id);
     }
 
     void ProcessFrame(std::span<uint8_t> frame_buffer) override {
-        // Get current read pointer
         auto current_span = bf.GetReadSpan();
+        size_t buffer_offset = in_buffer_procced_frames * FRAME_SIZE_BYTES;
 
-        // Calculate offsets
-        size_t buffer_offset = in_buffer_procced_frames * FRAME_SIZE;
+        // --- 1. Bounds Check (Standard) ---
+        if (buffer_offset + FRAME_SIZE_BYTES > current_span.size()) {
+            // We reached the end of the buffer.
+            // Time to swap?
 
-        // Safety check for buffer overruns
-        if (buffer_offset + FRAME_SIZE > current_span.size()) {
-            std::fill(frame_buffer.begin(), frame_buffer.end(), 0);  // Output silence on error
-            return;
-        }
+            // --- 2. The Scalable Safety Check ---
+            if (!bf.back_buffer_ready) {
+                // CRITICAL: Disk was too slow!
+                // We cannot swap yet. Send silence to keep connection alive.
+                spdlog::warn("[{}] UNDERRUN: Disk too slow, sending silence.", id);
+                std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
+                return;
+            }
 
-        // Copy audio data
-        auto start_it = current_span.begin() + buffer_offset;
-        std::copy(start_it, start_it + FRAME_SIZE, frame_buffer.begin());
+            // --- 3. Swap and Trigger Next Read ---
+            bf.Swap();
+            in_buffer_procced_frames = 0;
 
-        // Update counters
-        processed_frames++;
-        spdlog::info("{}/{}", processed_frames, total_frames);
-        in_buffer_procced_frames++;
+            // Reset pointers for the new buffer
+            current_span = bf.GetReadSpan();
+            buffer_offset = 0;
 
-        // Refill Logic
-        // Check if we passed the threshold AND no refill is currently happening
-        if (in_buffer_procced_frames >= refill_threshold_frames && !refill_pending) {
-            refill_pending = true;
-
+            // EAGER LOAD: Start filling the buffer we just finished reading immediately
             co_spawn(
-                file_handle.get_executor(),
-                [this]() -> asio::awaitable<void> { co_await RequestRefillAsync(); },
+                file_handle.get_executor(), [this]() { return RequestRefillAsync(); },
                 asio::detached);
         }
 
-        // End of Buffer Logic
-        // If we consumed the whole buffer, swap to the next one
-        if (in_buffer_procced_frames >= (bf.Size() / FRAME_SIZE)) {
-            bf.Swap();
-            in_buffer_procced_frames = 0;
-        }
+        // Copy data
+        auto start_it = current_span.begin() + buffer_offset;
+        std::copy(start_it, start_it + FRAME_SIZE_BYTES, frame_buffer.begin());
+
+        in_buffer_procced_frames++;
+        processed_frames++;
     }
 
     // -------- IO PATH (Worker Thread) --------
@@ -194,9 +214,7 @@ struct FileInputNode : Node, std::enable_shared_from_this<FileInputNode> {
                 spdlog::error("[{}] Async read error: {}", id, e.what());
             }
         }
-
-        // Mark refill as complete so the audio thread can request again later
-        refill_pending = false;
+        bf.back_buffer_ready = true;
     }
 };
 

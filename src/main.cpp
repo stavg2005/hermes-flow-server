@@ -5,11 +5,8 @@
 #include <memory>
 #include <thread>
 
-#include "Router.hpp"
-#include "io_context_pool.hpp"
-#include "server/ActiveSessions.hpp"
-#include "server/Listener.hpp"
 
+#include "Server.hpp"
 // --- LOGGER INCLUDES ---
 #include "spdlog/sinks/rotating_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
@@ -61,47 +58,25 @@ int main(int argc, char* argv[]) {
         }
 
         // --- 3. Configuration Parsing ---
-        auto const address = net::ip::make_address(argv[1]);
-        auto const port = static_cast<unsigned short>(std::atoi(argv[2]));
+        auto *const address = argv[1];
+        auto *const port = argv[2];
         auto const num_threads = std::max(1U, std::thread::hardware_concurrency());
 
-        spdlog::info("Listening on {}:{} with {} I/O threads.", address.to_string(), port,
-                     num_threads);
-
-        auto pool = std::make_shared<io_context_pool>(num_threads);
-
-        spdlog::debug("io_context_pool created with {} contexts.", num_threads);
-
-        auto sessions = std::make_shared<ActiveSessions>(pool);
-
-        auto router = std::make_shared<Router>(sessions, pool);
-        // --- 4. I/O Thread Pool ---
-
-        pool->run();
-
         net::io_context main_ioc;
+        auto server = std::make_shared<Server>(main_ioc,address,port,num_threads);
 
-        spdlog::debug("Router and ActiveSessions created.");
-
-        listener_ptr =
-            std::make_shared<listener>(main_ioc, *pool, tcp::endpoint{address, port}, router);
-        listener_ptr->run();
         // Setup Graceful Shutdown
         net::signal_set signals(main_ioc, SIGINT, SIGTERM);
         signals.async_wait([&](auto, auto) {
             // This handler is NON-BLOCKING
             spdlog::info("Stop signal received...");
-
-            // 1. Tell the pool threads to stop
-            pool->stop();
-
-            // 2. Tell the main event loop to stop
-            main_ioc.stop();
+            server->Stop();
         });
         spdlog::trace("Signal set waiting for SIGINT/SIGTERM.");
 
-        main_ioc.run();
-        listener_ptr.reset();
+        spdlog::info("Hermes Flow Server starting on {}:{}", address, port);
+        server->Start();
+
         // --- 9. Shutdown Complete ---
         spdlog::info("Server shutdown complete bitch.");
 

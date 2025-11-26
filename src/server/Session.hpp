@@ -11,12 +11,12 @@
 #include <unordered_map>
 
 #include "Nodes.hpp"
-#include "S3Client.hpp"
-#include "S3Session.hpp"
+#include "RTPPacketizer.hpp"
+#include "RTPTransmitter.hpp"
 #include "boost/asio/awaitable.hpp"
 #include "boost/asio/io_context.hpp"
 #include "boost/smart_ptr/intrusive_ptr.hpp"
-
+#include "../utils/config.hpp"
 class Graph;
 namespace net = boost::asio;
 class Session : public std::enable_shared_from_this<Session> {
@@ -34,9 +34,9 @@ class Session : public std::enable_shared_from_this<Session> {
 
     net::awaitable<void> RefillRequest();
 
-    net::awaitable<void> Process_Current_Node_Frame(std::span<uint8_t, 160> frame_buffer);
+    net::awaitable<void> Process_Current_Node_Frame(std::span<uint8_t, FRAME_SIZE_BYTES> frame_buffer);
 
-    net::awaitable<void> Packetize_And_Transmit_Frame(std::span<uint8_t, 160> frame_buffer);
+    net::awaitable<void> Packetize_And_Transmit_Frame(std::span<uint8_t, FRAME_SIZE_BYTES> frame_buffer);
 
     void getFrame();
 
@@ -44,6 +44,8 @@ class Session : public std::enable_shared_from_this<Session> {
 
     boost::asio::io_context& io_;
 
+    RTPPacketizer packetizer_;
+    RTPTransmitter transmitter_;
     const std::string id_;
 
     Node* current_node;
@@ -53,5 +55,8 @@ class Session : public std::enable_shared_from_this<Session> {
     net::cancellation_signal stop_signal;
 
     boost::asio::steady_timer timer_;
-    std::array<uint8_t, FRAME_SIZE> frame_data_{0};
+    std::array<uint8_t, FRAME_SIZE_BYTES> frame_data_{0};
+    std::array<uint8_t, FRAME_SIZE_BYTES> packet_buffer;
+
+    bool has_frame_{false};
 };

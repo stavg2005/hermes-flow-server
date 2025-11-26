@@ -6,12 +6,15 @@
 #include <chrono>
 #include <exception>
 #include <memory>
-#include <variant>
 
 #include "Nodes.hpp"
+#include "PacketUtils.hpp"
+#include "RTPPacketizer.hpp"
+#include "S3Session.hpp"
 #include "boost/asio/awaitable.hpp"
 #include "boost/asio/io_context.hpp"
-#include "boost/asio/random_access_file.hpp"
+#include "config.hpp"
+#include "packet.hpp"
 #include "spdlog/spdlog.h"
 
 namespace net = boost::asio;
@@ -20,7 +23,9 @@ Session::Session(boost::asio::io_context& ex, std::string&& id, Graph&& g)
     : io_(ex),
       id_(std::move(id)),
       graph_(std::make_unique<Graph>(std::move(g))),
-      timer_(ex, TIMER_TICK) {
+      timer_(ex),
+      packetizer_(PAYLOAD_TYPE, generate_ssrc(), SAMPLES_PER_FRAME),
+      transmitter_(io_, "host.docker.internal", 6000) {
     spdlog::debug("Session with ID {} has been created", id);
 };
 
@@ -68,25 +73,20 @@ net::awaitable<void> Session::start() {
     current_node = get_start_node();
     co_await current_node->InitilizeBuffers();
     spdlog::info("current node {}", current_node->id);
+    auto next_tick_time = std::chrono::steady_clock::now();
+    const auto interval = std::chrono::milliseconds(20);
     try {
         for (;;) {
-            auto cycle_start_time = std::chrono::steady_clock::now();
+            next_tick_time += interval;
 
-            std::span<uint8_t, FRAME_SIZE> frame_buffer_(frame_data_.data(), FRAME_SIZE);
+            std::span<uint8_t, FRAME_SIZE_BYTES> frame_buffer_(frame_data_.data(),
+                                                               FRAME_SIZE_BYTES);
             // process the frame into the buffer
             co_await Process_Current_Node_Frame(frame_buffer_);
 
             co_await Packetize_And_Transmit_Frame(frame_buffer_);
-
-            auto work_duration = std::chrono::steady_clock::now() - cycle_start_time;
-
-            auto sleep_duration = 20ms - work_duration;
-
-            if (sleep_duration.count() > 0) {
-                timer_.expires_after(sleep_duration);
-
-                co_await timer_.async_wait(net::use_awaitable);
-            }
+            timer_.expires_at(next_tick_time);
+            co_await timer_.async_wait(net::use_awaitable);
         }
     } catch (const boost::system::system_error& e) {
         if (e.code() == net::error::operation_aborted) {
@@ -96,22 +96,30 @@ net::awaitable<void> Session::start() {
     }
 }
 
-net::awaitable<void> Session::Process_Current_Node_Frame(std::span<uint8_t, 160> frame_buffer) {
+net::awaitable<void> Session::Process_Current_Node_Frame(
+    std::span<uint8_t, FRAME_SIZE_BYTES> frame_buffer) {
     current_node->ProcessFrame(frame_buffer);
 
     // Check if this frame was the last one for this node.
-    if (current_node->processed_frames>= current_node->total_frames) {
+    if (current_node->processed_frames >= current_node->total_frames) {
         current_node = current_node->target;
         spdlog::info("new current  node {}", current_node->id);
         co_return;
     }
 
-
     co_return;
 }
 
-net::awaitable<void> Session::Packetize_And_Transmit_Frame(std::span<uint8_t, 160> frame_buffer) {
+net::awaitable<void> Session::Packetize_And_Transmit_Frame(
+    std::span<uint8_t, FRAME_SIZE_BYTES> frame_buffer) {
+    std::span<uint8_t, FRAME_SIZE_BYTES> packet_span(packet_buffer.data(), FRAME_SIZE_BYTES);
+
+    auto packet_size = PacketUtils::packet2rtp(frame_buffer, packetizer_, packet_span);
+    has_frame_ = packet_size > 0;
+
+    if (has_frame_) {
+        transmitter_.asyncSend(packet_span, packet_size);
+    }
+
     co_return;
 }
-
-

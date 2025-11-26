@@ -16,6 +16,7 @@
 
 // Standard library includes
 #include <ctime>
+#include <exception>
 #include <filesystem>
 #include <memory>
 #include <stdexcept>
@@ -238,7 +239,8 @@ net::awaitable<void> S3Session::do_download_file(std::string file_key) {
         spdlog::info("SUCCESS: Downloaded {} — {} bytes ({:.2f} MB)", file_key, total_written,
                      total_written / (1024.0 * 1024.0));
 
-    } catch (...) {
+    } catch (const std::exception ex) {
+      spdlog::error("Error while downloading file {}",ex.what());
         cleanup_socket();
         throw;
     }

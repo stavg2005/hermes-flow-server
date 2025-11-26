@@ -19,6 +19,7 @@ ActiveSessions::ActiveSessions(std::shared_ptr<io_context_pool> pool)
 std::string ActiveSessions::create_and_run_session(const bj::object &jobj) {
   std::string key = std::to_string(next_session_id_++);
   std::string id_for_session = key;
+  
   Graph g = parse_graph(pool_->get_io_context(),jobj);
   spdlog::debug("Graph for session {} has {} nodes.", id_for_session,
                 g.nodes.size());

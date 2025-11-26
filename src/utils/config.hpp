@@ -1,10 +1,12 @@
+#pragma once
 #include <chrono>
-static const int FRAME_SIZE = 160;
-static const int BUFFER_SIZE = 1024 * 512;
-// 20ms of 8kHz mono audio
-static const size_t AUDIO_BLOCK_SIZE =
-    960;  // arbitrary packet size for transmission
-static const size_t REFILL_THRESHOLD = 512;
 
-using namespace std::chrono_literals;
-static const std::chrono::milliseconds TIMER_TICK = 20ms;
+
+static constexpr size_t SAMPLES_PER_FRAME = 160;
+static constexpr size_t BYTES_PER_SAMPLE = 2;
+static constexpr size_t FRAME_SIZE_BYTES = SAMPLES_PER_FRAME * BYTES_PER_SAMPLE;  // 16-bit PCM
+static constexpr size_t WAV_HEADER_SIZE = 44;
+static constexpr int MS = 20;
+static constexpr size_t PAYLOAD_TYPE = 8;
+static constexpr size_t BUFFER_SIZE=1024*128;
+
