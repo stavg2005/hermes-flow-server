@@ -3,7 +3,6 @@
 
 namespace bj = boost::json;
 
-
 namespace {
 
 // --- JSON Helpers ---
@@ -34,12 +33,14 @@ std::shared_ptr<Node> CreateFileInput(boost::asio::io_context& io, const bj::obj
 }
 
 std::shared_ptr<Node> CreateMixer(boost::asio::io_context&, const bj::object&) {
+
     return std::make_shared<MixerNode>();
 }
 
 std::shared_ptr<Node> CreateDelay(boost::asio::io_context&, const bj::object& data) {
     auto node = std::make_shared<DelayNode>();
-    node->delay_ms = require<int>(data, "delay");
+    node->delay_ms = require<int>(data, "delay") *1000; //seconds to milliseconds
+    node->total_frames = node->delay_ms / FRAME_DURATION;
     return node;
 }
 
@@ -53,9 +54,7 @@ std::shared_ptr<Node> CreateFileOptions(boost::asio::io_context&, const bj::obje
     return node;
 }
 
-}
-
-
+}  // namespace
 
 void RegisterBuiltinNodes() {
     auto& factory = NodeFactory::Instance();

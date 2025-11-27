@@ -4,9 +4,9 @@
 #include <span>
 #include <vector>
 
+#include "Nodes.hpp"
 #include "S3Session.hpp"  // If S3 logic stays here
 #include "config.hpp"
-#include "Nodes.hpp"
 #include "spdlog/spdlog.h"
 
 class AudioExecutor {
@@ -38,7 +38,6 @@ class AudioExecutor {
                 auto* fileNode = dynamic_cast<FileInputNode*>(node.get());
                 if (!fileNode) continue;
 
-                // Reuse your existing S3 logic or the new 'FetchFiles' refactor
                 if (!std::filesystem::exists(fileNode->file_path)) {
                     auto session = std::make_shared<S3Session>(io_);
                     co_await session->RequestFile(fileNode->file_name);
@@ -48,10 +47,22 @@ class AudioExecutor {
         }
     }
 
+    void UpdateMixers() {
+        for (const auto& node : graph_->nodes) {
+            if (node->kind == NodeKind::Mixer) {
+                auto* mixer = dynamic_cast<MixerNode*>(node.get());
+                if (!mixer) {
+                    continue;
+                }
+                mixer->SetMaxFrames();
+            }
+        }
+    }
     // 1. Initialization Phase: Download files, setup buffers
     boost::asio::awaitable<void> Prepare() {
         spdlog::info("Preparing Audio Graph...");
         co_await FetchFiles();
+        UpdateMixers();
         current_node_ = graph_->start_node;
     }
 

@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <boost/asio.hpp>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -13,10 +14,9 @@
 #include <string>
 #include <vector>
 
-#include "config.hpp"  //
 #include "boost/asio/awaitable.hpp"
+#include "config.hpp"  //
 #include "spdlog/spdlog.h"
-
 
 namespace asio = boost::asio;
 
@@ -77,7 +77,7 @@ struct IAsyncInitializer {
 struct Node {
     explicit Node(Node* t = nullptr) : target(t) {}
     virtual ~Node() = default;
-    //Virtual Cast idiom
+    // Virtual Cast idiom
     virtual IAudioProcessor* AsAudio() { return nullptr; }
     std::string id;
     NodeKind kind;
@@ -88,9 +88,6 @@ struct Node {
     int total_frames{0};
     int in_buffer_procced_frames{0};
 };
-
-
-
 
 // File Input Node (Needs Audio + Async Init)
 struct FileInputNode : Node,
@@ -115,17 +112,20 @@ struct FileInputNode : Node,
 
     IAudioProcessor* AsAudio() override { return this; }
 
-
     void Open() {
         boost::system::error_code ec;
         file_handle.open(file_path, asio::file_base::read_only, ec);
         if (!ec && file_handle.is_open()) {
             total_frames = file_handle.size() / FRAME_SIZE_BYTES;
+            spdlog::info("total frames {}", total_frames);
+            return;
         }
+        spdlog::error("exception while opening file {}", ec.what());
     }
 
     // --- IAsyncInitializer Implementation ---
     asio::awaitable<void> InitilizeBuffers() override {
+        spdlog::info("initilizing buffer for file input");
         if (!file_handle.is_open()) Open();
 
         // Initial double-buffer fill
@@ -157,11 +157,15 @@ struct FileInputNode : Node,
                 file_handle.get_executor(),
                 [self = shared_from_this()]() { return self->RequestRefillAsync(); },
                 asio::detached);
+        } else if (processed_frames > total_frames) {
+            // if we get called but we already read everything possible with mixer, return 0 buffer;
+
+            std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
+            return;
         }
 
         auto start_it = current_span.begin() + buffer_offset;
         std::copy(start_it, start_it + FRAME_SIZE_BYTES, frame_buffer.begin());
-
         in_buffer_procced_frames++;
         processed_frames++;
     }
@@ -185,24 +189,81 @@ struct FileInputNode : Node,
 };
 
 // Mixer Node (Needs Audio + Async Init for inputs)
-struct MixerNode : Node, IAudioProcessor, IAsyncInitializer {
+struct MixerNode : Node, IAudioProcessor {
     std::vector<FileInputNode*> inputs;  // Dependency on FileInput
-
-    explicit MixerNode(Node* t = nullptr) : Node(t) { kind = NodeKind::Mixer; }
-
-    void AddInput(FileInputNode* node) { inputs.push_back(node); }
-
-    // Recursive Initialization
-    asio::awaitable<void> InitilizeBuffers() override {
-        for (auto* input : inputs) {
-            co_await input->InitilizeBuffers();
+    std::array<int32_t, SAMPLES_PER_FRAME> accumulator_;
+    std::array<uint8_t, FRAME_SIZE_BYTES> temp_input_buffer_;
+    void SetMaxFrames() {
+        int max = 0;
+        for (auto* node : inputs) {
+            spdlog::info("node for {} has {} frames", node->file_name, node->total_frames);
+            max = std::max(max, node->total_frames);
         }
+        spdlog::info("max total frames {}", max);
+        total_frames = max;
     }
+
+    explicit MixerNode(Node* t = nullptr) : Node(t) {
+        spdlog::info("creating mixer");
+        kind = NodeKind::Mixer;
+    }
+
+    void AddInput(FileInputNode* node) {
+        inputs.push_back(node);
+        spdlog::info("added input to mixer");
+    }
+
+    IAudioProcessor* AsAudio() override { return this; }
+    // Recursive Initialization
 
     // Audio Processing
     void ProcessFrame(std::span<uint8_t> frame_buffer) override {
-       //TODO implement mixing logic
-        std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
+        // 1. reset accumulator
+        accumulator_.fill(0);
+
+        bool has_active_inputs = false;
+
+        for (auto* input_node : inputs) {
+            if (auto* audio_source = input_node->AsAudio()) {
+                has_active_inputs = true;
+
+                // Fetch input
+                audio_source->ProcessFrame(temp_input_buffer_);
+                auto* input_samples = reinterpret_cast<int16_t*>(temp_input_buffer_.data());
+
+                // Summing (Mixing)
+                for (size_t i = 0; i < SAMPLES_PER_FRAME; ++i) {
+                    accumulator_[i] += input_samples[i];
+                }
+            }
+        }
+
+        auto* output_samples = reinterpret_cast<int16_t*>(frame_buffer.data());
+
+        if (!has_active_inputs) {
+            std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
+            return;
+        }
+
+        // Apply Soft Clipping
+        // Formula: output = 32767 * tanh(input / 32767)
+        // This ensures the output NEVER exceeds the valid range, but sounds smooth.
+
+        for (size_t i = 0; i < SAMPLES_PER_FRAME; ++i) {
+            int32_t raw_sum = accumulator_[i];
+
+            // Optimization: Only run expensive math if we are clipping
+            if (raw_sum > CLIP_LIMIT_POSITIVE || raw_sum < CLIP_LIMIT_NEGATIVE) {
+                float compressed = std::tanh(raw_sum / MAX_INT16);
+                output_samples[i] = static_cast<int16_t>(compressed * MAX_INT16);
+            } else {
+                // Safe range: Pass through directly (Linear)
+                output_samples[i] = static_cast<int16_t>(raw_sum);
+            }
+        }
+
+        in_buffer_procced_frames++;
+        processed_frames++;
     }
 };
 
@@ -211,8 +272,12 @@ struct DelayNode : Node, IAudioProcessor {
     int delay_ms{0};
     explicit DelayNode(Node* t = nullptr) : Node(t) { kind = NodeKind::Delay; }
 
+    IAudioProcessor* AsAudio() override { return this; }
+
     void ProcessFrame(std::span<uint8_t> frame_buffer) override {
         std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
+        in_buffer_procced_frames++;
+        processed_frames++;
     }
 };
 
