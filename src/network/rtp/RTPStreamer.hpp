@@ -1,59 +1,105 @@
 #pragma once
+#include <algorithm>
 #include <memory>
-#include <span>
+#include <string>
 #include <vector>
+#include <span>
 
-#include "CodecStrategy.hpp" 
+#include <boost/asio.hpp>
+#include "spdlog/spdlog.h"
+
+// Core/Infra includes
+#include "CodecStrategy.hpp" // Adjust path if needed
+#include "alaw.hpp"
+#include "config.hpp"
+
+// Local RTP includes
 #include "PacketUtils.hpp"
-#include "config.hpp"  // for FRAME_SIZE_BYTES
 #include "RTPPacketizer.hpp"
-#include "RTPTransmitter.hpp"
 #include "packet.hpp"
 
-class RTPStreamer {
-   public:
-    RTPStreamer(boost::asio::io_context& io, std::string dest_ip, uint16_t dest_port)
-        : transmitter_(io, dest_ip, dest_port) {
-        // 1. Initialize the Strategy (Default to A-Law)
-        codec_ = std::make_unique<ALawCodecStrategy>();
+namespace net = boost::asio;
+using udp = net::ip::udp;
 
-        // 2. Initialize Packetizer using the Strategy's metadata
-        packetizer_ =
-            std::make_unique<RTPPacketizer>(codec_->GetPayloadType(), generate_ssrc(),
-                                            codec_->GetTimestampIncrement(FRAME_SIZE_BYTES));
+class RTPStreamer {
+public:
+    // 1. Constructor: Open socket on ANY available port
+    explicit RTPStreamer(net::io_context& io)
+        : socket_(io, udp::endpoint(udp::v4(), 0))
+    {
+        codec_ = std::make_unique<ALawCodecStrategy>();
+        packetizer_ = std::make_unique<RTPPacketizer>(
+            codec_->GetPayloadType(),
+            generate_ssrc(),
+            codec_->GetTimestampIncrement(FRAME_SIZE_BYTES)
+        );
     }
 
-    // Takes RAW PCM, encodes it, packetizes it, and sends it.
-    void SendFrame(std::span<const uint8_t> pcm_frame) {
-        // 1. Allocate memory that owns itself (Safety for Async Send)
-        //    Note: RTP_HEADER_SIZE (12) + Encoded payload size
-        //    For A-Law, payload size == pcm_size / 2.
-        //    We allocate enough for the worst case (PCM size) just to be safe/easy.
-        size_t max_packet_size = PacketUtils::RTP_HEADER_SIZE + pcm_frame.size();
-        auto packet_owner = std::make_shared<std::vector<uint8_t>>(max_packet_size);
+    // 2. Client Management (Called by Session when users join/leave)
+    void AddClient(const std::string& ip, uint16_t port) {
+        boost::system::error_code ec;
+        auto addr = net::ip::make_address(ip, ec);
+        if (ec) {
+            spdlog::error("Invalid IP: {} - {}", ip, ec.message());
+            return;
+        }
 
-        std::span<uint8_t> packet_span(*packet_owner);
 
-        // 2. Encode & Packetize using the injected Codec
-        //    [New Signature with *codec_]
-        size_t packet_size = PacketUtils::packet2rtp(pcm_frame, *packetizer_, *codec_, packet_span);
+        udp::endpoint ep(addr, port);
 
-        // 3. Transmit
-        if (packet_size > 0) {
-            // asyncSend takes ownership of 'packet_owner' keeping it alive
-            transmitter_.asyncSend(std::move(packet_owner), packet_size);
+        // Avoid duplicates
+        if (std::find(clients_.begin(), clients_.end(), ep) == clients_.end()) {
+            clients_.push_back(ep);
+            spdlog::info("RTP Client added: {}:{}", ip, port);
         }
     }
 
-    // Allow switching codecs at runtime if needed
-    void SetCodec(std::unique_ptr<ICodecStrategy> new_codec) {
-        codec_ = std::move(new_codec);
-        // Re-init packetizer with new codec params if necessary,
-        // or just update payload type/timestamp in packetizer if supported.
+    void RemoveClient(const std::string& ip, uint16_t port) {
+        try {
+            auto addr = net::ip::make_address(ip);
+            udp::endpoint ep(addr, port);
+
+            std::erase(clients_, ep); // Requires C++20
+            spdlog::info("RTP Client removed: {}:{}", ip, port);
+        } catch(...) {}
     }
 
-   private:
-    RTPTransmitter transmitter_;
-    std::unique_ptr<RTPPacketizer> packetizer_;  // Use unique_ptr for delayed init
+    // 3. Send Logic (Efficient Fan-Out)
+    void SendFrame(std::span<const uint8_t> pcm_frame) {
+        // Optimization: Don't do work if no one is listening
+        {
+            if (clients_.empty()) return;
+        }
+
+        // A. Allocate & Encode ONCE
+        //    We create ONE shared buffer for the packet.
+        size_t max_packet_size = PacketUtils::RTP_HEADER_SIZE + pcm_frame.size();
+        auto packet_owner = std::make_shared<std::vector<uint8_t>>(max_packet_size);
+        std::span<uint8_t> packet_span(*packet_owner);
+
+        size_t packet_size = PacketUtils::packet2rtp(pcm_frame, *packetizer_, *codec_, packet_span);
+
+        if (packet_size == 0) return;
+
+        // B. Send the SAME buffer to ALL clients
+        //    This is "Zero-Copy" broadcasting.
+
+        for (const auto& endpoint : clients_) {
+            socket_.async_send_to(
+                net::buffer(*packet_owner, packet_size),
+                endpoint,
+                // Capture shared_ptr by value to keep memory alive until send completes
+                [packet_owner](const boost::system::error_code& ec, std::size_t) {
+                    if (ec) { /* Handle error (e.g., remove client) */ }
+                }
+            );
+        }
+    }
+
+private:
+    std::unique_ptr<RTPPacketizer> packetizer_;
     std::unique_ptr<ICodecStrategy> codec_;
+
+    udp::socket socket_;
+    std::vector<udp::endpoint> clients_;
 };

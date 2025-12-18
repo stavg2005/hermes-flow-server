@@ -6,12 +6,13 @@
 
 #include "Nodes.hpp"
 #include "S3Session.hpp"  // If S3 logic stays here
+#include "WebSocketSessionObserver.hpp"
 #include "config.hpp"
 #include "spdlog/spdlog.h"
 
 class AudioExecutor {
    public:
-    AudioExecutor(boost::asio::io_context& io, std::unique_ptr<Graph> graph)
+    AudioExecutor(boost::asio::io_context& io, std::shared_ptr<Graph> graph)
         : io_(io), graph_(std::move(graph)) {
         current_node_ = graph_->start_node;
     }
@@ -28,6 +29,7 @@ class AudioExecutor {
         return false;
     }
 
+    SessionStats& get_stats() { return stats; }
     net::awaitable<void> FetchFiles() {
         spdlog::info("Fetching files");
 
@@ -64,6 +66,8 @@ class AudioExecutor {
         co_await FetchFiles();
         UpdateMixers();
         current_node_ = graph_->start_node;
+        stats.current_node_id = current_node_->id;
+        stats.total_bytes_sent = 0;
     }
 
     // 2. Execution Phase: Fill a buffer with the next frame
@@ -79,17 +83,22 @@ class AudioExecutor {
 
             // Check if node is done
             if (current_node_->processed_frames >= current_node_->total_frames) {
+                if (auto* bruh = current_node_->AsAudio()) {
+                    bruh->Close();
+                }
                 current_node_ = current_node_->target;
+                stats.current_node_id = current_node_->id;
                 spdlog::info("Transitioning to node: {}",
                              current_node_ ? current_node_->id : "END");
             }
-
+            stats.total_bytes_sent += FRAME_SIZE_BYTES;
             return (current_node_ != nullptr);
         }
     };
 
    private:
     boost::asio::io_context& io_;
-    std::unique_ptr<Graph> graph_;
+    std::shared_ptr<Graph> graph_;
     Node* current_node_ = nullptr;
+    SessionStats stats;
 };

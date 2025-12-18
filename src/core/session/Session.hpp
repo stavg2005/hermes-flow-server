@@ -3,6 +3,7 @@
 #include <string>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/use_awaitable.hpp>
+#include "ISessionObserver.hpp"
 namespace net = boost::asio;
 // Forward declarations - No need to include the actual headers!
 class AudioExecutor;
@@ -16,7 +17,8 @@ public:
 
     net::awaitable<void>  start();
     net::awaitable<void>  stop();
-
+   void AddClient(std::string &ip, uint16_t port);
+    void AttachObserver(std::shared_ptr<ISessionObserver> observer);
 private:
     struct Impl; // Opaque pointer
     std::unique_ptr<Impl> pImpl_;

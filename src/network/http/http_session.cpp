@@ -124,7 +124,7 @@ http::response<http::string_body> HttpSession::do_build_response() {
         res.version(req.version());
         res.keep_alive(req.keep_alive());
         spdlog::info("Routing");
-        router_->RouteQuery(req, res);
+        router_->RouteQuery(req, res,stream_);
     }
     return res;  // Return the response by value
 }

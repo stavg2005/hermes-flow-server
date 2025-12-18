@@ -1,0 +1,31 @@
+#pragma once
+#include <string>
+
+// A simple container for snapshot data
+struct SessionStats {
+    std::string session_id;
+    std::string current_node_id;  // Which node is currently processing?
+    double progress_percent;      // 0.0 to 100.0
+    size_t total_bytes_sent;      // For network graph
+    int active_inputs;            // How many files are mixing right now
+    double buffer_health;         // Optional: 0.0 (Empty) to 1.0 (Full)
+};
+
+struct ISessionObserver {
+    // 1. Virtual Destructor (Crucial for Interfaces!)
+    virtual ~ISessionObserver() = default;
+
+    // 2. The Core Update Loop
+    //    Called periodically (e.g., every 100ms or every frame)
+    virtual void OnStatsUpdate(const SessionStats& stats) = 0;
+
+    // 3. Lifecycle Events
+    //    Called when the graph moves to a new node (e.g., "Intro" -> "Chorus")
+    virtual void OnNodeTransition(const std::string& node_id) = 0;
+
+    //    Called when the session finishes successfully
+    virtual void OnSessionComplete() = 0;
+
+    //    Called on critical failure (e.g., File not found)
+    virtual void OnError(const std::string& error_message) = 0;
+};
