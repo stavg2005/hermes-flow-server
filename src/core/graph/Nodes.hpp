@@ -358,6 +358,7 @@ struct ClientsNode : Node {
 
 // -------- Graph Container --------
 struct Graph {
+  // for easy traversal when looking for nodes
     std::vector<std::shared_ptr<Node>> nodes;
     std::unordered_map<std::string, std::shared_ptr<Node>> node_map;
     Node* start_node = nullptr;

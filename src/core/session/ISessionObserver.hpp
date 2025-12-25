@@ -12,7 +12,7 @@ struct SessionStats {
 };
 
 struct ISessionObserver {
-    // 1. Virtual Destructor (Crucial for Interfaces!)
+    // 1. Virtual Destructor (Crucial for Interfaces)
     virtual ~ISessionObserver() = default;
 
     // 2. The Core Update Loop

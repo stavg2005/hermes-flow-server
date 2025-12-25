@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "Router.hpp"
+#include "boost/beast/websocket/rfc6455.hpp"
 #include "boost/system/detail/errc.hpp"
 #include "spdlog/spdlog.h"
 
@@ -24,7 +25,7 @@ namespace server::core {
 
 // fail() function is unchanged...
 void fail(beast::error_code ec, const char* what) {
-    if(ec == beast::errc::stream_timeout){
+    if (ec == beast::errc::stream_timeout) {
         spdlog::warn("{} {}", what, ec.message());
     }
     if (ec != beast::errc::not_connected && ec != net::error::eof &&
@@ -64,6 +65,22 @@ net::awaitable<void> HttpSession::do_session() {
                 fail(ec_read, "read");
             }
             co_return;  // Stop session
+        }
+
+        const auto& req = parser_->get();
+        if (beast::websocket::is_upgrade(req)) {
+            spdlog::info("Handling WebSocket Upgrade");
+
+            // Create a dummy response object (Router expects it, even if unused for WS)
+            http::response<http::string_body> res;
+
+            // Pass the socket (stream_) to the router.
+            // The Router -> ActiveSessions will MOVE the socket to WebSocketSession.
+            router_->RouteQuery(req, res, stream_);
+
+            // IMPORTANT: The socket is now gone (moved).
+            // We must stop this HTTP session immediately.
+            co_return;
         }
 
         // Process the request and build a response
@@ -116,7 +133,7 @@ http::response<http::string_body> HttpSession::do_build_response() {
     http::response<http::string_body> res;
     const auto& req = parser_->get();
 
-    //cheack for  pre-flight requests
+    // cheack for  pre-flight requests
     if (is_options_request()) {
         server::models::ResponseBuilder::build_options_response(res, req.version(),
                                                                 req.keep_alive());
@@ -124,7 +141,7 @@ http::response<http::string_body> HttpSession::do_build_response() {
         res.version(req.version());
         res.keep_alive(req.keep_alive());
         spdlog::info("Routing");
-        router_->RouteQuery(req, res,stream_);
+        router_->RouteQuery(req, res, stream_);
     }
     return res;  // Return the response by value
 }
@@ -193,4 +210,4 @@ void HttpSession::do_close() {
     }
 }
 
-}
+}  // namespace server::core

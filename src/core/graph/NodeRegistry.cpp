@@ -1,3 +1,4 @@
+
 #include <charconv>
 #include <cstdint>
 #include <cstdlib>
@@ -88,7 +89,7 @@ std::shared_ptr<Node> CreateClients(boost::asio::io_context&, const bj::object& 
 std::shared_ptr<Node> CreateFileOptions(boost::asio::io_context&, const bj::object& data) {
     auto node = std::make_shared<FileOptionsNode>();
     node->gain = require<double>(data, "gain");
- 
+
     return node;
 }
 

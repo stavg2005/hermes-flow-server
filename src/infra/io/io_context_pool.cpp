@@ -65,6 +65,7 @@ void io_context_pool::stop() {
 
 net::io_context &io_context_pool::get_io_context() {
   spdlog::debug("Fetching IO context from pool");
+  //multiple threads can acsses the pool 
   std::size_t idx = next_io_context_.fetch_add(1, std::memory_order_relaxed) %
                     io_contexts_.size();
 

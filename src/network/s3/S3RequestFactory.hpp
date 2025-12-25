@@ -47,7 +47,7 @@ http::request<http::empty_body> create_signed_GET_request(const S3Config& cfg, h
     aws_sigv4::Signature signer(cfg.service, full_host, cfg.region, cfg.secret_key, cfg.access_key,
                                 now);
 
-    // since its get request the request dosent have a body so it would be a hash of an empty string
+    // since its a get request the request dosent have a body so it would be a hash of an empty string
     // we hardcode it to avoid redundent calculations
     std::string payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
@@ -56,6 +56,7 @@ http::request<http::empty_body> create_signed_GET_request(const S3Config& cfg, h
     char amzdate[20];
     std::strftime(amzdate, sizeof(amzdate), "%Y%m%dT%H%M%SZ", &timeinfo);
 
+    //to comply with the library format we do it like this
     std::map<std::string, std::vector<std::string>> headers;
     headers["host"] = {full_host};
     headers["x-amz-content-sha256"] = {payload_hash};

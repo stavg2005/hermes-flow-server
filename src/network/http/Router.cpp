@@ -87,6 +87,7 @@ void Router::handle_transmit(const req_t& req, res_t& res) {
     //  Parse JSON
     spdlog::debug("in handle transmit");
     sys::error_code jec;
+    //get json graph from body
     bj::value jv = bj::parse(req.body(), jec);
     if (jec) {
         throw std::runtime_error("Invalid JSON");

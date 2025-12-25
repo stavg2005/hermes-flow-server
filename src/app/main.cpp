@@ -4,6 +4,7 @@
 #include <exception>
 #include <memory>
 #include <thread>
+
 #include "NodeFactory.hpp"
 #include "Server.hpp"
 
@@ -44,15 +45,20 @@ void setup_logging() {
 
     spdlog::flush_on(spdlog::level::debug);
 }
-
+//to avoid linking issues because  RegisterBuilitnodes depdence on creation fuction in node Registry and we must initilize them at startup
+//TODO check why bruh how does it find it
 void RegisterBuiltinNodes();
-int main(int argc, char* argv[]) {
 
+
+int main(int argc, char* argv[]) {
     try {
-        // --- 1. Set up logging FIRST ---
+        // Set up logging FIRST ---
         setup_logging();
+
         RegisterBuiltinNodes();
-        // --- 2. Argument Validation ---
+
+        // TODO use tomlplusplus for configuration instead of command line options
+        //  --- 2. Argument Validation ---
         if (argc != 3) {
             spdlog::critical("Usage: hermes_server <address> <port>");
             spdlog::critical("Example: hermes_server 0.0.0.0 8080");

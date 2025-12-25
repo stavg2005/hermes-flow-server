@@ -38,7 +38,7 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
 
     void on_accept(beast::error_code ec) {
         if (ec) return spdlog::error("WS Accept failed: {}", ec.message());
-        spdlog::info("WS Connected. Waiting for 'init' message...");
+        spdlog::info("WS Connected");
         do_read();  // Start listening
     }
 

@@ -1,3 +1,4 @@
+
 #pragma once
 #include <boost/asio.hpp>
 #include <memory>
@@ -30,6 +31,7 @@ class AudioExecutor {
     }
 
     SessionStats& get_stats() { return stats; }
+
     net::awaitable<void> FetchFiles() {
         spdlog::info("Fetching files");
 
@@ -37,6 +39,7 @@ class AudioExecutor {
         // Move FetchFiles logic here
         for (const auto& node : graph_->nodes) {
             if (node->kind == NodeKind::FileInput) {
+              // downcast from node the fileinput
                 auto* fileNode = dynamic_cast<FileInputNode*>(node.get());
                 if (!fileNode) continue;
 

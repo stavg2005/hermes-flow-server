@@ -43,8 +43,7 @@ std::string ActiveSessions::create_session(const bj::object& jobj) {
     auto session = std::make_unique<Session>(io, std::move(id_for_session), std::move(g));
 
     spdlog::debug("Session {} Created", id_for_session);
-    // Get the raw pointer *before* moving the unique_ptr
-    Session* session_ptr = session.get();
+
 
     // --- LOCK THE MUTEX for the write ---
     {
@@ -60,6 +59,8 @@ std::string ActiveSessions::create_session(const bj::object& jobj) {
 
 void ActiveSessions::create_and_run_WebsocketSession(std::string audio_session_id, const req_t& req,
                                                      boost::beast::tcp_stream& stream) {
+    spdlog::info("creating websocket for session {}", audio_session_id);
+    // TODO check if there is an exsisting websocket already
     std::shared_ptr<Session> session;
     {  // Lock for thread safety
         std::lock_guard<std::mutex> lock(mutex_);

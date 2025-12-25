@@ -62,32 +62,35 @@ net::awaitable<void> S3Session::connect() {
 // --- Write Request & Read Headers ---
 net::awaitable<std::pair<size_t, beast::flat_buffer>> S3Session::write_request_and_read_headers(
     const std::string& file_key) {
+    // build download requests following s3 rules
     auto req = build_download_request(file_key);
+    // write the request
     co_await http::async_write(stream_, req, net::use_awaitable);
 
-    // This buffer will be *returned*
+    // setting up for response
     beast::flat_buffer header_buffer;
     http::response_parser<http::empty_body> parser;
-    parser.body_limit(MAX_BODY_LIMIT);
+    parser.body_limit(MAX_BODY_LIMIT);  // for big files
 
+    // read headers first to check for errors
     co_await http::async_read_header(stream_, header_buffer, parser, net::use_awaitable);
 
     const auto& response = parser.get();
-
+    // (Error handling logic)
     if (response.result() != http::status::ok) {
-        // (Error handling logic... unchanged)
         http::response_parser<http::string_body> error_parser(std::move(parser));
         co_await http::async_read(stream_, header_buffer, error_parser, net::use_awaitable);
         std::string error_body = error_parser.get().body();
 
         spdlog::error("S3 returned error {}: {}", response.result_int(), error_body);
-        throw std::runtime_error("S3 non-OK response: " + std::to_string(response.result_int()));
+        throw std::runtime_error("S3 non-OK response: " + std::to_string(response.result_int())); //NOLINT
     }
 
     size_t expected_size = 0;
+    //Get the size of the file to be displayed
     if (auto it = response.find(http::field::content_length); it != response.end()) {
         expected_size = std::stoull(std::string(it->value()));
-        spdlog::info("Downloading {} ({:.2f} MB)", file_key, expected_size / (1024.0 * 1024.0));
+        spdlog::info("Downloading {} ({:.2f} MB)", file_key, expected_size / (1024.0 * 1024.0)); //NOLINT
     } else {
         spdlog::warn("S3 response missing Content-Length. Download may be incomplete.");
     }
@@ -207,7 +210,7 @@ void S3Session::cleanup_socket() {
 
 net::awaitable<void> S3Session::do_download_file(std::string file_key) {
     spdlog::info(">>>> [S3 DOWNLOAD] STARTING {} <<<<", file_key);
-    stream_.expires_never();
+    stream_.expires_never(); //workaround when download takes a while to avoid disconnecting
     net::stream_file file(ioc_);
     // if goes out of scope without disarming file would be deleted (RAII pattern)
     std::unique_ptr<PartialFileGuard> file_guard;
@@ -231,7 +234,7 @@ net::awaitable<void> S3Session::do_download_file(std::string file_key) {
         // Step 4: Stream the body, passing in the leftover buffer
         size_t total_written = co_await stream_body_to_file(file, expected_size, header_buffer);
 
-        // (Success and cleanup logic... unchanged)
+        // (Success and cleanup logic
         beast::error_code ec;
         file.close(ec);
         file_guard->disarm();
@@ -240,7 +243,7 @@ net::awaitable<void> S3Session::do_download_file(std::string file_key) {
                      total_written / (1024.0 * 1024.0));
 
     } catch (const std::exception ex) {
-      spdlog::error("Error while downloading file {}",ex.what());
+        spdlog::error("Error while downloading file {}", ex.what());
         cleanup_socket();
         throw;
     }
@@ -251,9 +254,8 @@ net::awaitable<void> S3Session::do_download_file(std::string file_key) {
 
 // --- RequestFile (Entry Point) ---
 net::awaitable<void> S3Session::RequestFile(std::string file_key) {
-    // Make a copy of the key for the error handler
-    auto key_for_handler = file_key;
 
+//TODO check why i used exception ptr
     try {
         co_await do_download_file(file_key);
     } catch (const std::exception_ptr&
@@ -263,7 +265,7 @@ net::awaitable<void> S3Session::RequestFile(std::string file_key) {
                 // std::exception_ptr is type-erased (opaque). We must rethrow it
                 // here to restore its type information so the catch block works.
                 std::rethrow_exception(p);
-            } catch (const std::exception& e) {
+            } catch (const std::exception& e)  { //NOLINT
                 // This is now the *single* point of failure logging.
                 spdlog::error("S3Session failed for file '{}' (host: {}) with error: {}", file_key,
                               cfg_.host, e.what());
