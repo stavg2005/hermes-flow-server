@@ -5,7 +5,7 @@
 #include "S3Client.hpp"
 #include "awssigv4.h"
 #include "boost/beast/http/empty_body.hpp"
-namespace http = boost::beast::http;
+#include "types.hpp"
 
 namespace S3RequestFactory {
 

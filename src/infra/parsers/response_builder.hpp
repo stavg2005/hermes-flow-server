@@ -6,10 +6,9 @@
 #include "boost/json.hpp"
 #include <boost/beast.hpp>
 #include <string>
-
+#include "types.hpp"
 namespace server::models {
-namespace json = boost::json;
-namespace http = boost::beast::http;
+
 
 // Define this alias for readability
 using res_t = http::response<http::string_body>;
@@ -38,7 +37,7 @@ public:
     res.keep_alive(keep_alive);
     res.result(http::status::ok);
 
-    set_standard_headers(res); 
+    set_standard_headers(res);
     res.set(http::field::content_type, "application/json");
 
 

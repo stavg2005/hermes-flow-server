@@ -10,16 +10,13 @@
 #include <memory>
 
 #include "Router.hpp"
-#include "boost/beast/websocket/rfc6455.hpp"
 #include "boost/system/detail/errc.hpp"
 #include "spdlog/spdlog.h"
+#include "types.hpp"
 
-namespace net = boost::asio;
-namespace beast = boost::beast;
-namespace http = beast::http;
 static const int SESSION_TIMEOUT_SECONDS = 4;
 static const int DRAIN_BUFFER_SIZE = 1024;
-using tcp = net::ip::tcp;
+
 
 namespace server::core {
 
@@ -28,8 +25,8 @@ void fail(beast::error_code ec, const char* what) {
     if (ec == beast::errc::stream_timeout) {
         spdlog::warn("{} {}", what, ec.message());
     }
-    if (ec != beast::errc::not_connected && ec != net::error::eof &&
-        ec != net::error::connection_reset) {
+    if (ec != beast::errc::not_connected && ec != asio::error::eof &&
+        ec != asio::error::connection_reset) {
         spdlog::error("{} {}", what, ec.message());
     }
 }
@@ -45,12 +42,12 @@ HttpSession::HttpSession(tcp::socket&& socket, const std::shared_ptr<Router>& ro
 }
 
 void HttpSession::run() {
-    net::co_spawn(
+    asio::co_spawn(
         stream_.get_executor(), [self = shared_from_this()]() { return self->do_session(); },
-        net::detached);
+        asio::detached);
 }
 
-net::awaitable<void> HttpSession::do_session() {
+asio::awaitable<void> HttpSession::do_session() {
     for (;;) {
         // Reset state
         parser_ = std::make_shared<http::request_parser<http::string_body>>();
@@ -105,10 +102,10 @@ net::awaitable<void> HttpSession::do_session() {
     }
 }
 
-net::awaitable<std::tuple<beast::error_code, bool>> HttpSession::do_read_request() {
+asio::awaitable<std::tuple<beast::error_code, bool>> HttpSession::do_read_request() {
     // Read Header
     auto [ec_header, bytes_header] = co_await http::async_read_header(
-        stream_, buffer_, *parser_, net::as_tuple(net::use_awaitable));
+        stream_, buffer_, *parser_, asio::as_tuple(asio::use_awaitable));
 
     if (ec_header) {
         co_return std::make_tuple(ec_header, false);
@@ -119,7 +116,7 @@ net::awaitable<std::tuple<beast::error_code, bool>> HttpSession::do_read_request
         stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
 
         auto [ec_body, bytes_body] = co_await http::async_read(stream_, buffer_, *parser_,
-                                                               net::as_tuple(net::use_awaitable));
+                                                               asio::as_tuple(asio::use_awaitable));
         if (ec_body) {
             co_return std::make_tuple(ec_body, false);
         }
@@ -146,7 +143,7 @@ http::response<http::string_body> HttpSession::do_build_response() {
     return res;  // Return the response by value
 }
 
-net::awaitable<beast::error_code> HttpSession::do_write_response(
+asio::awaitable<beast::error_code> HttpSession::do_write_response(
     http::response<http::string_body>& res) {
     beast::error_code ec_opt;
     ec_opt = stream_.socket().set_option(tcp::no_delay(true), ec_opt);
@@ -155,7 +152,7 @@ net::awaitable<beast::error_code> HttpSession::do_write_response(
     }
 
     auto [ec_write, bytes_write] =
-        co_await http::async_write(stream_, res, net::as_tuple(net::use_awaitable));
+        co_await http::async_write(stream_, res, asio::as_tuple(asio::use_awaitable));
 
     if (ec_write) {
         co_return ec_write;
@@ -165,7 +162,7 @@ net::awaitable<beast::error_code> HttpSession::do_write_response(
     co_return beast::error_code{};
 }
 
-net::awaitable<void> HttpSession::do_graceful_close() {
+asio::awaitable<void> HttpSession::do_graceful_close() {
     spdlog::info("graceful closed");
     beast::error_code ec;
     ec = stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
@@ -182,7 +179,7 @@ net::awaitable<void> HttpSession::do_graceful_close() {
     // just that the operation finished.
     try {
         co_await stream_.async_read_some(drain_buffer.prepare(DRAIN_BUFFER_SIZE),
-                                         net::use_awaitable  // No as_tuple, we'll catch exceptions
+                                         asio::use_awaitable  // No as_tuple, we'll catch exceptions
         );
     } catch (const std::exception&) {
         // Ignore all errors during drain (e.g., client hung up)

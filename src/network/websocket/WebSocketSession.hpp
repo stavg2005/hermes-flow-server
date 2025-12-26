@@ -8,14 +8,7 @@
 #include <vector>
 
 #include "spdlog/spdlog.h"
-
-
-namespace beast = boost::beast;
-namespace http = beast::http;
-namespace websocket = beast::websocket;
-namespace net = boost::asio;
-namespace json = boost::json;
-using tcp = boost::asio::ip::tcp;
+#include "types.hpp"
 
 
 
@@ -67,7 +60,7 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
     // 4. Send Implementation (Inline to avoid linker errors)
     void Send(std::string message) {
         auto msg_ptr = std::make_shared<std::string>(std::move(message));
-        net::post(ws_.get_executor(), [self = shared_from_this(), msg_ptr]() {
+        asio::post(ws_.get_executor(), [self = shared_from_this(), msg_ptr]() {
             bool writing = !self->send_queue_.empty();
             self->send_queue_.push_back(msg_ptr);
             if (!writing) self->do_write();
@@ -75,7 +68,7 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
     }
 
     void do_write() {
-        ws_.async_write(net::buffer(*send_queue_.front()),
+        ws_.async_write(asio::buffer(*send_queue_.front()),
                         beast::bind_front_handler(&WebSocketSession::on_write, shared_from_this()));
     }
 

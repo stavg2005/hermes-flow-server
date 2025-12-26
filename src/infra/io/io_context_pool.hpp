@@ -6,8 +6,7 @@
 #include <memory>
 #include <thread>  // For std::jthread
 #include <vector>
-
-namespace net = boost::asio;
+#include "types.hpp"
 
 class io_context_pool {
  public:
@@ -27,13 +26,13 @@ class io_context_pool {
   void stop();
 
   //@brief Get an io_context from the pool in a round-robin fashion.
-  net::io_context &get_io_context();
+  asio::io_context &get_io_context();
 
  private:
-  std::vector<std::shared_ptr<net::io_context>> io_contexts_;
+  std::vector<std::shared_ptr<asio::io_context>> io_contexts_;
 
   using work_guard_type =
-      net::executor_work_guard<net::io_context::executor_type>;
+      asio::executor_work_guard<asio::io_context::executor_type>;
   std::vector<work_guard_type> work_guards_;
 
   std::vector<std::jthread> threads_;

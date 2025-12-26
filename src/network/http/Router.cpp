@@ -12,8 +12,7 @@
 #include "boost/url/url_view.hpp"
 #include "spdlog/spdlog.h"
 
-namespace sys = boost::system;
-namespace bj = boost::json;
+#include "types.hpp"
 
 // Define type aliases for readability
 using req_t = http::request<http::string_body>;
@@ -88,7 +87,7 @@ void Router::handle_transmit(const req_t& req, res_t& res) {
     spdlog::debug("in handle transmit");
     sys::error_code jec;
     //get json graph from body
-    bj::value jv = bj::parse(req.body(), jec);
+    json::value jv = json::parse(req.body(), jec);
     if (jec) {
         throw std::runtime_error("Invalid JSON");
     }

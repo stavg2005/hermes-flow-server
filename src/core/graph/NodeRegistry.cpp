@@ -1,70 +1,90 @@
+#include "NodeRegistry.hpp"
 
 #include <charconv>
 #include <cstdint>
-#include <cstdlib>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <system_error>
-#include <unordered_map>
 
 #include "NodeFactory.hpp"
 #include "Nodes.hpp"
+#include "types.hpp"
 
-namespace bj = boost::json;
+
+// =========================================================
+//  Helpers
+// =========================================================
 
 namespace {
 
-// --- JSON Helpers ---
+/**
+ * @brief Extract a value from a JSON ojsonect, or return a default if missing/null.
+ */
 template <class T>
-T get_or(const bj::object& obj, const char* key, T default_val) {
-    if (!obj.contains(key) || obj.at(key).is_null()) return default_val;
+T get_or(const json::object ojson, const char* key, T default_val) {
+    if (!ojson.contains(key) || ojson.at(key).is_null()) return default_val;
     try {
-        return bj::value_to<T>(obj.at(key));
+        return json::value_to<T>(ojson.at(key));
     } catch (...) {
         return default_val;
     }
 }
 
+/**
+ * @brief Extract a mandatory value from a JSON ojsonect. Throws if missing.
+ */
 template <class T>
-T require(const bj::object& obj, const char* key) {
-    if (!obj.contains(key)) throw std::runtime_error(std::string("Missing key: ") + key);
-    return bj::value_to<T>(obj.at(key));
+T require(const json::object& ojson, const char* key) {
+    if (!ojson.contains(key)) {
+        throw std::runtime_error(std::string("Missing required config key: ") + key);
+    }
+    return json::value_to<T>(ojson.at(key));
 }
 
-// --- Creation Functions ---
+// =========================================================
+//  Factory Creation Functions
+// =========================================================
+// These functions match the signature required by NodeFactory.
+// They take the IO context and a JSON ojsonect, and return a Node.
 
-std::shared_ptr<Node> CreateFileInput(boost::asio::io_context& io, const bj::object& data) {
+std::shared_ptr<Node> CreateFileInput(boost::asio::io_context& io, const json::object& data) {
     std::string name = require<std::string>(data, "fileName");
+    // TODO: Make the download path configurable via config.toml
     std::string path = "downloads/" + name;
 
-    // Note: Assuming FileInputNode constructor handles 'kind = NodeKind::FileInput'
     return std::make_shared<FileInputNode>(io, name, path);
 }
 
-std::shared_ptr<Node> CreateMixer(boost::asio::io_context&, const bj::object&) {
+std::shared_ptr<Node> CreateMixer(boost::asio::io_context&, const json::object&) {
     return std::make_shared<MixerNode>();
 }
 
-std::shared_ptr<Node> CreateDelay(boost::asio::io_context&, const bj::object& data) {
+std::shared_ptr<Node> CreateDelay(boost::asio::io_context&, const json::object& data) {
     auto node = std::make_shared<DelayNode>();
-    node->delay_ms = require<float>(data, "delay") * 1000;  // seconds to milliseconds
-    node->total_frames = node->delay_ms / FRAME_DURATION;
+    // Convert seconds (JSON) to milliseconds (Internal)
+    node->delay_ms = require<float>(data, "delay") * 1000;
+    node->total_frames = static_cast<int>(node->delay_ms / FRAME_DURATION);
     return node;
 }
 
-std::shared_ptr<Node> CreateClients(boost::asio::io_context&, const bj::object& data) {
-    // 1. Create the empty node first
+std::shared_ptr<Node> CreateFileOptions(boost::asio::io_context&, const json::ojsonect& data) {
+    auto node = std::make_shared<FileOptionsNode>();
+    node->gain = require<double>(data, "gain");
+    return node;
+}
+
+std::shared_ptr<Node> CreateClients(boost::asio::io_context&, const json::ojsonect& data) {
     auto node = std::make_unique<ClientsNode>();
 
-    // 2. Parse the array
     if (data.contains("clients")) {
-        for (const auto& v : require<bj::array>(data, "clients")) {
-            const auto& client_obj = v.as_object();
+        for (const auto& v : require<json::array>(data, "clients")) {
+            const auto& client_ojson = v.as_ojsonect();
+            std::string ip = require<std::string>(client_ojson, "ip");
 
-            std::string ip = require<std::string>(client_obj, "ip");
-
+            // Handle port as Number (Standard) or String (Legacy/Typo)
             uint16_t port_val = 0;
-            const auto& json_port = client_obj.at("port");
+            const auto& json_port = client_ojson.at("port");
 
             if (json_port.is_int64()) {
                 port_val = static_cast<uint16_t>(json_port.as_int64());
@@ -72,36 +92,33 @@ std::shared_ptr<Node> CreateClients(boost::asio::io_context&, const bj::object& 
                 std::string_view p_str = json_port.as_string();
                 auto [ptr, ec] =
                     std::from_chars(p_str.data(), p_str.data() + p_str.size(), port_val);
-
                 if (ec != std::errc()) {
-                    spdlog::error("Failed to parse port for IP {}: {}", ip, p_str);
+                    spdlog::error("Invalid port format for client IP {}: {}", ip, p_str);
                     continue;
                 }
             }
 
-            spdlog::info("Configuring client: {}:{}", ip, port_val);
             node->AddClient(ip, port_val);
         }
     }
-
-    return node;
-}
-std::shared_ptr<Node> CreateFileOptions(boost::asio::io_context&, const bj::object& data) {
-    auto node = std::make_shared<FileOptionsNode>();
-    node->gain = require<double>(data, "gain");
-
     return node;
 }
 
 }  // namespace
 
+// =========================================================
+//  Public Registration API
+// =========================================================
+
 void RegisterBuiltinNodes() {
     auto& factory = NodeFactory::Instance();
 
-    // Register simple function pointers
+    // Map string keys (from JSON) to C++ creation functions
     factory.Register("fileInput", CreateFileInput);
     factory.Register("mixer", CreateMixer);
     factory.Register("delay", CreateDelay);
     factory.Register("clients", CreateClients);
     factory.Register("fileOptions", CreateFileOptions);
+
+    spdlog::debug("Registered built-in node types.");
 }

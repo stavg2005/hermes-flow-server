@@ -12,16 +12,13 @@
 #include "spdlog/spdlog.h"
 
 
-namespace beast = boost::beast;
-namespace net = boost::asio;
-using tcp = net::ip::tcp;
-namespace http = beast::http;
+#include "types.hpp"
 
 class S3Client :std::enable_shared_from_this<S3Client>{
  public:
   explicit S3Client(S3Config cfg = {});
 
-  std::shared_ptr<S3Session> CreateSession(net::io_context& ioc);
+  std::shared_ptr<S3Session> CreateSession(asio::io_context& ioc);
 
  private:
   S3Config cfg_;

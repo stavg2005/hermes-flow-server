@@ -1,204 +1,98 @@
 #include "Json2Graph.hpp"
 
-// All other necessary headers go here
-#include <iostream>  // For std::cout
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <string_view>  // For std::string_view
 
 #include "NodeFactory.hpp"
-#include "Nodes.hpp"
-#include "boost/asio/io_context.hpp"
 
-namespace bj = boost::json;
+
 
 namespace {
 
+// --- Helpers ---
+
 template <class T>
-T require(const bj::object& obj, const char* key) {
+T require(const json::object& obj, const char* key) {
     if (!obj.contains(key)) {
         throw std::runtime_error(std::string("Missing required key: ") + key);
     }
     try {
-        return bj::value_to<T>(obj.at(key));
+        return json::value_to<T>(obj.at(key));
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Failed to parse key '") + key + "': " + e.what());
     }
 }
 
-template <class T>
-T get_or(const bj::object& obj, const char* key, T default_val) {
-    if (!obj.contains(key) || obj.at(key).is_null()) {
-        return default_val;
-    }
-    try {
-        return bj::value_to<T>(obj.at(key));
-    } catch (...) {
-        return default_val;  // Return default on parsing error
-    }
-}
+} // namespace
 
-double parse_gain_from_options(const bj::value* options_val) {
-    if (!options_val || !options_val->is_object()) {
-        return 1.0;  // Default gain if options are null or not an object
-    }
-    return get_or<double>(options_val->as_object(), "gain", 1.0);
-}
+// =========================================================
+//  Graph Parser
+// =========================================================
 
-// --- String Helper ---
-
-std::string_view to_string(NodeKind kind) {
-    switch (kind) {
-        case NodeKind::FileInput:
-            return "FileInput";
-        case NodeKind::Mixer:
-            return "Mixer";
-        case NodeKind::Delay:
-            return "Delay";
-        case NodeKind::Clients:
-            return "Clients";
-        case NodeKind::FileOptions:
-            return "FileOptions";
-    }
-    return "Unknown";
-}
-
-}  // End anonymous namespace
-
-//=============================================================================
-// PUBLIC FUNCTION DEFINITIONS
-//=============================================================================
-
-Graph parse_graph(boost::asio::io_context& io, const bj::object& o) {
+Graph parse_graph(boost::asio::io_context& io, const json::object& o) {
     Graph g{};
 
-    const bj::object& flow_obj = require<bj::object>(o, "flow");
+    const json::object& flow_obj = require<json::object>(o, "flow");
+    const json::array& nodes_arr = require<json::array>(flow_obj, "nodes");
+    const json::array& edges_arr = require<json::array>(flow_obj, "edges");
 
-    // --- 1. First Pass: Create all Nodes via Factory ---
-    for (auto& v : require<bj::array>(flow_obj, "nodes")) {
+    // --- Phase 1: Create Nodes ---
+    for (const auto& v : nodes_arr) {
         const auto& node_obj = v.as_object();
 
         std::string id = require<std::string>(node_obj, "id");
-        std::string type_str = require<std::string>(node_obj, "type");
-        const auto& data = require<bj::object>(node_obj, "data");
+        std::string type = require<std::string>(node_obj, "type");
+        const auto& data = require<json::object>(node_obj, "data");
 
-        std::shared_ptr<Node> new_node = NodeFactory::Instance().Create(type_str, io, data);
-
+        // Factory creates the specific Node subclass
+        auto new_node = NodeFactory::Instance().Create(type, io, data);
         new_node->id = id;
 
         g.node_map[id] = new_node;
         g.nodes.push_back(std::move(new_node));
     }
-    // --- 2. Set the Start Node ---
-    const bj::object& start_node_obj = require<bj::object>(flow_obj, "start_node");
-    std::string start_node_id = require<std::string>(start_node_obj, "id");
 
-    if (!g.node_map.contains(start_node_id)) {
-        throw std::runtime_error("Start node ID not found in node map: " + start_node_id);
+    // --- Phase 2: Set Start Node ---
+    const json::object& start_obj = require<json::object>(flow_obj, "start_node");
+    std::string start_id = require<std::string>(start_obj, "id");
+
+    if (!g.node_map.contains(start_id)) {
+        throw std::runtime_error("Start node ID not found: " + start_id);
     }
-    g.start_node = g.node_map.at(start_node_id).get();
+    g.start_node = g.node_map.at(start_id).get();
 
-    // --- 3. Second Pass: Link Nodes via Edges ---
-    for (auto& v : require<bj::array>(flow_obj, "edges")) {
+    // --- Phase 3: Link Edges ---
+    for (const auto& v : edges_arr) {
         const auto& edge_obj = v.as_object();
 
         std::string source_id = require<std::string>(edge_obj, "source");
         std::string target_id = require<std::string>(edge_obj, "target");
 
-        if (!g.node_map.contains(source_id)) {
-            throw std::runtime_error("Edge source ID not found: " + source_id);
+        if (!g.node_map.contains(source_id)) throw std::runtime_error("Missing source: " + source_id);
+        if (!g.node_map.contains(target_id)) throw std::runtime_error("Missing target: " + target_id);
+
+        auto source = g.node_map.at(source_id);
+        auto target = g.node_map.at(target_id);
+
+        // Special Case: Configuration Edges (e.g., Options -> Input)
+        if (source->kind == NodeKind::FileOptions && target->kind == NodeKind::FileInput) {
+            auto opt = std::dynamic_pointer_cast<FileOptionsNode>(source);
+            auto inp = std::dynamic_pointer_cast<FileInputNode>(target);
+            if (opt && inp) inp->SetOptions(opt);
         }
-        if (!g.node_map.contains(target_id)) {
-            throw std::runtime_error("Edge target ID not found: " + target_id);
-        }
+        // Standard Audio Flow Edges
+        else {
+            source->target = target.get();
 
-        auto source_node = g.node_map.at(source_id);
-        auto target_node = g.node_map.at(target_id);
-
-        // Check if this is a "settings" edge from FileOptions -> FileInput
-        if (source_node->kind == NodeKind::FileOptions &&
-            target_node->kind == NodeKind::FileInput) {
-            // This is a settings edge. Apply the gain.
-            auto options_node = std::dynamic_pointer_cast<FileOptionsNode>(source_node);
-            auto file_node = std::dynamic_pointer_cast<FileInputNode>(target_node);
-            file_node->SetOptions(options_node);
-
-            source_node->target = target_node.get();
-        } else {
-            source_node->target = target_node.get();
-
-            if (target_node->kind == NodeKind::Mixer && source_node->kind == NodeKind::FileInput) {
-                // dynamic_cast is safe here because we checked kind
-                auto mixer = std::dynamic_pointer_cast<MixerNode>(target_node);
-
-                mixer->AddInput(static_cast<FileInputNode*>(source_node.get()));
+            // If target is a Mixer, register the input
+            if (target->kind == NodeKind::Mixer && source->kind == NodeKind::FileInput) {
+                auto mixer = std::dynamic_pointer_cast<MixerNode>(target);
+                auto input = std::dynamic_pointer_cast<FileInputNode>(source);
+                if (mixer && input) mixer->AddInput(input.get());
             }
         }
     }
 
     return g;
 }
-/*
-void print_graph(const Graph& graph) {
-    std::cout << "=========================\n";
-    std::cout << "     PARSED GRAPH      \n";
-    std::cout << "=========================\n";
-    std::cout << "Total Nodes: " << graph.nodes.size() << "\n\n";
-
-    for (const auto& node_ptr : graph.nodes) {
-        const Node* node = node_ptr.get();
-        if (!node) {
-            std::cout << "--- [Null Node Pointer] ---\n";
-            continue;
-        }
-
-        std::cout << "--- Node [" << node->id << "] ---\n";
-        std::cout << "  Type:   " << to_string(node->kind) << "\n";
-
-        if (node->target) {
-            std::cout << "  Target: " << node->target->id << "\n";
-        } else {
-            std::cout << "  Target: [None]\n";
-        }
-
-        std::cout << "  Data:   "
-                  << "\n";
-        switch (node->kind) {
-            case NodeKind::FileInput: {
-                const auto* file_node = static_cast<const FileInputNode*>(node);
-                std::cout << "    - file_name: " << file_node->file_name << "\n";
-                std::cout << "    - file_path: " << file_node->file_path << "\f";
-                break;
-            }
-            case NodeKind::Mixer: {
-                const auto* mixer_node = static_cast<const MixerNode*>(node);
-                // Updated to use 'inputs' vector instead of 'files' map
-                std::cout << "    - Inputs: " << mixer_node->inputs.size() << "\n";
-                for (const auto* input : mixer_node->inputs) {
-                    // We can access input->file_name because we know it's a FileInputNode
-                    std::cout << "      - " << input->file_name << " (Gain: " << input->bf.gain
-                              << ")\n";
-                }
-                break;
-            }
-            case NodeKind::Delay: {
-                const auto* delay_node = static_cast<const DelayNode*>(node);
-                std::cout << "    - delay_ms: " << delay_node->delay_ms << "\n";
-                break;
-            }
-            case NodeKind::Clients: {
-                std::cout << "    - (Clients node data...)\n";
-                break;
-            }
-            case NodeKind::FileOptions: {
-                const auto* options_node = static_cast<const FileOptionsNode*>(node);
-                std::cout << "    - gain: " << options_node->gain << "\n";
-                break;
-            }
-        }
-        std::cout << "\n";
-    }
-    std::cout << "=========================\n";
-}
-*/

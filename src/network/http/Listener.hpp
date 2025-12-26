@@ -8,16 +8,17 @@
 #include "boost/asio/io_context.hpp"
 #include "io_context_pool.hpp"
 
+#include "types.hpp"
 
-namespace net = boost::asio;
-using tcp = boost::asio::ip::tcp;
+
+
 
 class ServerContext;
 // Accepts incoming connections and launches sessions
 class listener : public std::enable_shared_from_this<listener> {
  public:
   // Constructor takes io_context and endpoint to bind to
-  listener(net::io_context &ioc, io_context_pool &pool, const tcp::endpoint &endpoint,
+  listener(asio::io_context &ioc, io_context_pool &pool, const tcp::endpoint &endpoint,
            const std::shared_ptr<Router> &router);
 
   // Start accepting incoming connections
@@ -25,7 +26,7 @@ class listener : public std::enable_shared_from_this<listener> {
 
  private:
   // Accept a new connection
-  net::awaitable<void> do_accept();
+  asio::awaitable<void> do_accept();
 
   // Member variables
 

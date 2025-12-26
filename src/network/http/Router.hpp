@@ -12,8 +12,7 @@
 #include "boost/beast/http/string_body_fwd.hpp"
 #include "io_context_pool.hpp"
 #include "response_builder.hpp"
-
-namespace http = boost::beast::http;
+#include "types.hpp"
 
 using ResponseBuilder = server::models::ResponseBuilder;
 using req_t = http::request<http::string_body>;
@@ -29,9 +28,9 @@ class Router {
    private:
     void Router::handle_websocket_request(const req_t& req, res_t& res,
                                           boost::beast::tcp_stream& stream);
-        // Handle transmit requests
-        void handle_transmit(const http::request<http::string_body>& req,
-                             http::response<http::string_body>& resm);
+    // Handle transmit requests
+    void handle_transmit(const http::request<http::string_body>& req,
+                         http::response<http::string_body>& resm);
 
     void handle_stop(boost::urls::url_view& url, http::response<http::string_body>& res);
     void handle_download(boost::urls::url_view& url, http::response<http::string_body>& res);

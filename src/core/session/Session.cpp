@@ -1,100 +1,119 @@
 #include "Session.hpp"
 
+#include <spdlog/spdlog.h>
+
+#include <array>
 #include <boost/asio.hpp>
+#include <chrono>
 #include <memory>
-#include <variant>  // Required for std::get_if
 
 #include "AudioExecutor.hpp"
 #include "ISessionObserver.hpp"
-#include "Nodes.hpp"  // Ensure this is your NEW header with the variant
+#include "Nodes.hpp"
 #include "RTPStreamer.hpp"
-#include "spdlog/spdlog.h"
 
-namespace net = boost::asio;
+
+
+
+// =========================================================
+//  Session Implementation (PIMPL)
+// =========================================================
 
 struct Session::Impl {
-    boost::asio::io_context& io_;
+    net::io_context& io_;
     std::string id_;
+
+    std::shared_ptr<Graph> graph_;
     std::unique_ptr<AudioExecutor> audio_executor_;
     std::unique_ptr<RTPStreamer> streamer_;
+
     net::steady_timer timer_;
-    std::shared_ptr<Graph> graph_;
     std::shared_ptr<ISessionObserver> observer_;
 
-    Impl(boost::asio::io_context& io, std::string id, Graph&& g)
+    Impl(net::io_context& io, std::string id, Graph&& g)
         : io_(io), id_(std::move(id)), timer_(io), graph_(std::make_shared<Graph>(std::move(g))) {
         audio_executor_ = std::make_unique<AudioExecutor>(io_, graph_);
         streamer_ = std::make_unique<RTPStreamer>(io_);
-        spdlog::debug("Session with ID {} has been created", id);
+
+        spdlog::debug("Session [{}] created.", id_);
     }
 
-    // -rtp stramer need to know the clients so this function grabs the client node and adds all the clients to the streamer-
+    void AttachObserver(std::shared_ptr<ISessionObserver> observer) {
+        observer_ = std::move(observer);
+        spdlog::info("[{}] Observer attached.", id_);
+    }
+
+    void AddClient(const std::string& ip, uint16_t port) { streamer_->AddClient(ip, port); }
+
+    net::awaitable<void> stop() {
+        // Future: Add cancellation logic here
+        co_return;
+    }
+
+    // Initialize streamer with clients found in the graph
     void ConfigureStreamerFromGraph() {
         for (const auto& node : graph_->nodes) {
-            // kind check or dynamic_cast
             if (node->kind == NodeKind::Clients) {
-                // Safe cast
+                // Safe static_cast because we checked kind
                 auto* clientsNode = static_cast<ClientsNode*>(node.get());
 
-                // Iterate the map and register with streamer
                 for (const auto& [ip, port] : clientsNode->clients) {
-                    spdlog::info("Registering initial client: {}:{}", ip, port);
+                    spdlog::info("[{}] Auto-registering client: {}:{}", id_, ip, port);
                     streamer_->AddClient(ip, port);
                 }
             }
         }
     }
-    // -------------------------
-
-    void AttachObserver(std::shared_ptr<ISessionObserver> observer) {
-        spdlog::info("attached observer");
-        observer_ = std::move(observer);
-    }
 
     net::awaitable<void> start() {
-        spdlog::info("starting session");
-        // This works because AudioExecutor::Prepare is an awaitable
+        spdlog::info("[{}] Starting session execution...", id_);
+
+        // 1. Prepare Audio (Fetch files, init buffers)
         co_await audio_executor_->Prepare();
 
+        // 2. Setup Network
         ConfigureStreamerFromGraph();
 
-        // 2. Audio Loop
+        // 3. Audio Processing Loop
+        // 20ms Frame Duration
         auto next_tick = std::chrono::steady_clock::now();
+        auto last_stats_time = std::chrono::steady_clock::now();
         std::array<uint8_t, FRAME_SIZE_BYTES> pcm_buffer;
-        auto last_update_time_ = std::chrono::steady_clock::now();
 
         for (;;) {
-            // Timing Logic
+            // A. Wait for next tick
             next_tick += std::chrono::milliseconds(20);
-
             timer_.expires_at(next_tick);
-            co_await timer_.async_wait(boost::asio::use_awaitable);
+            co_await timer_.async_wait(net::use_awaitable);
 
-            // Execution Logic
+            // B. Process Audio
             bool has_more = audio_executor_->GetNextFrame(pcm_buffer);
 
             if (!has_more) {
-                spdlog::info("Session {} finished.", id_);
+                spdlog::info("[{}] Session finished (End of Graph).", id_);
                 break;
             }
 
-            auto now = std::chrono::steady_clock::now();
-            if (now - last_update_time_ > std::chrono::milliseconds(100)) {
-                observer_->OnStatsUpdate(audio_executor_->get_stats());
-                last_update_time_ = now;
-            }
-
-            // Network Logic
+            // C. Send to Clients
             streamer_->SendFrame(pcm_buffer);
+
+            // D. Emit Stats (every 100ms)
+            if (observer_) {
+                auto now = std::chrono::steady_clock::now();
+                if (now - last_stats_time > std::chrono::milliseconds(100)) {
+                    observer_->OnStatsUpdate(audio_executor_->get_stats());
+                    last_stats_time = now;
+                }
+            }
         }
     }
-
-    void AddClient(const std::string& ip, uint16_t port) const { streamer_->AddClient(ip, port); }
-
-    net::awaitable<void> stop() { co_return; }
 };
 
-Session::Session(boost::asio::io_context& io, std::string id, Graph&& g)
+// =========================================================
+//  Session Wrapper
+// =========================================================
+
+Session::Session(net::io_context& io, std::string id, Graph&& g)
     : pImpl_(std::make_unique<Impl>(io, std::move(id), std::move(g))) {}
 
 Session::~Session() = default;
@@ -102,7 +121,6 @@ Session::~Session() = default;
 net::awaitable<void> Session::start() {
     return pImpl_->start();
 }
-
 net::awaitable<void> Session::stop() {
     return pImpl_->stop();
 }

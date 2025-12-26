@@ -1,150 +1,95 @@
 #include "ActiveSessions.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
-#include <boost/asio/use_awaitable.hpp>
-#include <memory>
 #include <stdexcept>
-#include <string>
 
 #include "Json2Graph.hpp"
 #include "Nodes.hpp"
-#include "Session.hpp"
-#include "WebSocketSession.hpp"
 #include "WebSocketSessionObserver.hpp"
-#include "boost/asio/io_context.hpp"
-#include "boost/beast/core/tcp_stream.hpp"
-#include "io_context_pool.hpp"
-#include "spdlog/spdlog.h"
-using req_t = http::request<http::string_body>;
-using res_t = http::response<http::string_body>;
-namespace net = boost::asio;
-ActiveSessions::ActiveSessions(std::shared_ptr<io_context_pool> pool) : pool_(std::move(pool)) {};
 
-std::string ActiveSessions::create_session(const bj::object& jobj) {
-    std::string key = std::to_string(next_session_id_++);
-    std::string id_for_session = key;
 
-    Graph g = parse_graph(pool_->get_io_context(), jobj);
-    spdlog::debug("Graph for session {} has {} nodes.", id_for_session, g.nodes.size());
 
+
+ActiveSessions::ActiveSessions(std::shared_ptr<io_context_pool> pool) : pool_(std::move(pool)) {}
+
+std::string ActiveSessions::create_session(const boost::json::object& jobj) {
+    // 1. Safety Check
     if (!pool_) {
-        spdlog::critical("ActiveSessions: io_context_pool is null! Cannot create session.");
-        // We can't continue.
-        throw std::runtime_error("Server is not initialized: pool_ is null");
+        spdlog::critical("ActiveSessions: io_context_pool is null!");
+        throw std::runtime_error("Server not initialized: pool_ is null");
     }
 
-    spdlog::debug("creating session with id {}", id_for_session);
+    std::string session_id = std::to_string(next_session_id_++);
+    spdlog::debug("Creating session with ID: {}", session_id);
 
+    // 2. Parse Graph & Create Session
+    // Note: We access pool_ only after the check above
     boost::asio::io_context& io = pool_->get_io_context();
+    Graph g = parse_graph(io, jobj);
 
-    spdlog::debug("In active session fetched io context for  session {}", id_for_session);
+    spdlog::debug("Graph parsed for session {}. Node count: {}", session_id, g.nodes.size());
 
-    auto session = std::make_unique<Session>(io, std::move(id_for_session), std::move(g));
+    auto session = std::make_shared<Session>(io, session_id, std::move(g));
 
-    spdlog::debug("Session {} Created", id_for_session);
-
-
-    // --- LOCK THE MUTEX for the write ---
+    // 3. Register Thread-Safely
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        sessions_[key] = std::move(session);
-        spdlog::debug("Session with ID {} has been registerd", id_for_session);
+        sessions_[session_id] = std::move(session);
+        spdlog::debug("Session {} registered.", session_id);
     }
-    // --- Mutex is unlocked here ---
 
-    return key;
+    return session_id;
 }
 
 void ActiveSessions::create_and_run_WebsocketSession(std::string audio_session_id, const req_t& req,
                                                      boost::beast::tcp_stream& stream) {
-    spdlog::info("creating websocket for session {}", audio_session_id);
-    // TODO check if there is an exsisting websocket already
+    spdlog::info("Attaching WebSocket to session {}", audio_session_id);
+
     std::shared_ptr<Session> session;
-    {  // Lock for thread safety
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (!sessions_.contains(audio_session_id)) {
-            throw std::runtime_error("Session ID not found");
-        }
-        session = sessions_[audio_session_id];
-    }
-
-    auto websocket = std::make_shared<WebSocketSession>(stream.release_socket());
-
-    websocket->do_accept(req);
-
-    session->AttachObserver(std::make_shared<WebSocketSessionObserver>(websocket));
-
-    Session* session_ptr = session.get();
-    boost::asio::io_context& io = pool_->get_io_context();
-    net::co_spawn(
-        io,
-        [this, self = shared_from_this(), audio_session_id, session_ptr]() -> net::awaitable<void> {
-            try {
-                co_await session_ptr->start();
-            } catch (const std::exception& e) {
-                spdlog::error("Error has occured in Session {}", e.what());
-            }
-
-            // Now that co_await is finished, the session is over.
-            // Clean it up.
-            std::lock_guard<std::mutex> lock(mutex_);
-            sessions_.erase(audio_session_id);
-        },
-        net::detached);
-}
-
-// old way
-std::string ActiveSessions::create_and_run_session(const bj::object& jobj) {
-    std::string key = std::to_string(next_session_id_++);
-    std::string id_for_session = key;
-
-    Graph g = parse_graph(pool_->get_io_context(), jobj);
-    spdlog::debug("Graph for session {} has {} nodes.", id_for_session, g.nodes.size());
-
-    if (!pool_) {
-        spdlog::critical("ActiveSessions: io_context_pool is null! Cannot create session.");
-        // We can't continue.
-        throw std::runtime_error("Server is not initialized: pool_ is null");
-    }
-
-    spdlog::debug("creating session with id {}", id_for_session);
-
-    boost::asio::io_context& io = pool_->get_io_context();
-
-    spdlog::debug("In active session fetched io context for  session {}", id_for_session);
-
-    auto session = std::make_unique<Session>(io, std::move(id_for_session), std::move(g));
-
-    spdlog::debug("Session {} Created", id_for_session);
-    // Get the raw pointer *before* moving the unique_ptr
-    Session* session_ptr = session.get();
-
-    // --- LOCK THE MUTEX for the write ---
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        sessions_[key] = std::move(session);
-        spdlog::debug("Session with ID {} has been registerd", id_for_session);
+        auto it = sessions_.find(audio_session_id);
+        if (it == sessions_.end()) {
+            throw std::runtime_error("Session ID not found: " + audio_session_id);
+        }
+        session = it->second;
     }
-    // --- Mutex is unlocked here ---
 
-    net::co_spawn(
-        io,
-        [this, self = shared_from_this(), key, session_ptr]() -> net::awaitable<void> {
+    // Handover socket to WebSocketSession
+    auto websocket = std::make_shared<WebSocketSession>(stream.release_socket());
+    websocket->do_accept(req);
+
+    // Link WebSocket -> Audio Session
+    session->AttachObserver(std::make_shared<WebSocketSessionObserver>(websocket));
+
+    // Launch Session Lifecycle
+    asio::co_spawn(
+        pool_->get_io_context(),
+        [this, self = shared_from_this(), id = audio_session_id,
+         sess = session]() -> asio::awaitable<void> {
             try {
-                co_await session_ptr->start();
+                co_await sess->start();
             } catch (const std::exception& e) {
-                spdlog::error("Error has occured in Session {}", e.what());
+                spdlog::error("[{}] Session error: {}", id, e.what());
             }
 
-            // Now that co_await is finished, the session is over.
-            // Clean it up.
+            // Cleanup on finish
             std::lock_guard<std::mutex> lock(mutex_);
-            sessions_.erase(key);
+            sessions_.erase(id);
+            spdlog::debug("[{}] Session removed.", id);
         },
-        net::detached);
+        asio::detached);
+}
 
-    return key;
-};
+// Implementations for lookup methods (get, list_ids) should be added here
+// if they were previously missing, following the pattern:
+/*
+std::shared_ptr<Session> ActiveSessions::get(const std::string& id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(id);
+    return (it != sessions_.end()) ? it->second : nullptr;
+}
+*/

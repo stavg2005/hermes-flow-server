@@ -151,6 +151,7 @@ set(SOURCES_CORE
     src/core/session/ActiveSessions.cpp
     src/core/session/Session.cpp
     src/core/graph/NodeRegistry.cpp
+    src/core/graph/Nodes.cpp
 )
 
 # =============================================================================

@@ -2,14 +2,11 @@
 
 #include "Router.hpp"
 #include <boost/asio.hpp>
-#include <boost/asio/awaitable.hpp> // <-- Add
+#include <boost/asio/awaitable.hpp>
 #include <boost/beast.hpp>
 #include <memory>
+#include "types.hpp"
 
-namespace net = boost::asio;
-namespace beast = boost::beast;
-namespace http = beast::http;
-using tcp = net::ip::tcp;
 
 namespace server::core {
 
@@ -29,13 +26,13 @@ public:
 
 private:
   // --- This is the new coroutine that contains ALL logic ---
-  net::awaitable<void> do_session();
+  asio::awaitable<void> do_session();
 
   // --- This helper also becomes an awaitable coroutine ---
-  net::awaitable<void> do_graceful_close();
+  asio::awaitable<void> do_graceful_close();
 
-  net::awaitable<std::tuple<beast::error_code, bool>> do_read_request();
-  net::awaitable<beast::error_code>
+  asio::awaitable<std::tuple<beast::error_code, bool>> do_read_request();
+  asio::awaitable<beast::error_code>
   do_write_response(http::response<http::string_body> &res);
 
   http::response<http::string_body> do_build_response();

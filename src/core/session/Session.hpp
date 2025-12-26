@@ -1,25 +1,28 @@
 #pragma once
+
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/io_context.hpp>
 #include <memory>
 #include <string>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/use_awaitable.hpp>
+
 #include "ISessionObserver.hpp"
-namespace net = boost::asio;
-// Forward declarations - No need to include the actual headers!
-class AudioExecutor;
-class RTPStreamer;
+
+
+// Forward declarations
 class Graph;
 
 class Session : public std::enable_shared_from_this<Session> {
-public:
+   public:
     Session(boost::asio::io_context& io, std::string id, Graph&& g);
-    ~Session(); // Destructor must be defined in .cpp where Impl is complete
+    ~Session();  // Destructor requires Impl to be complete in .cpp
 
-    net::awaitable<void>  start();
-    net::awaitable<void>  stop();
-   void AddClient(std::string &ip, uint16_t port);
+    boost::asio::awaitable<void> start();
+    boost::asio::awaitable<void> stop();
+
+    void AddClient(std::string& ip, uint16_t port);
     void AttachObserver(std::shared_ptr<ISessionObserver> observer);
-private:
-    struct Impl; // Opaque pointer
+
+   private:
+    struct Impl;
     std::unique_ptr<Impl> pImpl_;
 };
