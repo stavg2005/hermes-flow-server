@@ -1,59 +1,64 @@
 #include "http_session.hpp"
 
-#include <boost/asio/as_tuple.hpp>
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/detached.hpp>
-#include <boost/asio/use_awaitable.hpp>
-#include <boost/beast/http/message.hpp>
-#include <boost/beast/http/string_body.hpp>
 #include <chrono>
 #include <memory>
 
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/use_awaitable.hpp>
+#include <spdlog/spdlog.h>
+
 #include "Router.hpp"
-#include "boost/system/detail/errc.hpp"
-#include "spdlog/spdlog.h"
 #include "types.hpp"
 
-static const int SESSION_TIMEOUT_SECONDS = 4;
-static const int DRAIN_BUFFER_SIZE = 1024;
 
 
-namespace server::core {
+namespace {
+    // Constants
+    constexpr int SESSION_TIMEOUT_SECONDS = 15;
+    constexpr int DRAIN_BUFFER_SIZE = 1024;
 
-// fail() function is unchanged...
-void fail(beast::error_code ec, const char* what) {
-    if (ec == beast::errc::stream_timeout) {
-        spdlog::warn("{} {}", what, ec.message());
-    }
-    if (ec != beast::errc::not_connected && ec != asio::error::eof &&
-        ec != asio::error::connection_reset) {
-        spdlog::error("{} {}", what, ec.message());
+    // Helper: Report failures
+    void fail(beast::error_code ec, const char* what) {
+        if (ec == beast::errc::stream_timeout) {
+            spdlog::debug("[HttpSession] Stream timeout: {}", what);
+            return;
+        }
+        if (ec != beast::errc::not_connected &&
+            ec != asio::error::eof &&
+            ec != asio::error::connection_reset) {
+            spdlog::error("[HttpSession] {} error: {}", what, ec.message());
+        }
     }
 }
 
-// Constructor is unchanged...
+namespace server::core {
+
 HttpSession::HttpSession(tcp::socket&& socket, const std::shared_ptr<Router>& router)
     : stream_(std::move(socket)), router_(router) {
+
     beast::error_code ec;
     auto remote = stream_.socket().remote_endpoint(ec);
     if (!ec) {
-        spdlog::info("New connection from: {}:{}", remote.address().to_string(), remote.port());
+        spdlog::debug("New HTTP connection: {}", remote.address().to_string());
     }
 }
 
 void HttpSession::run() {
     asio::co_spawn(
-        stream_.get_executor(), [self = shared_from_this()]() { return self->do_session(); },
-        asio::detached);
+        stream_.get_executor(),
+        [self = shared_from_this()]() { return self->do_session(); },
+        asio::detached
+    );
 }
 
 asio::awaitable<void> HttpSession::do_session() {
     for (;;) {
-        // Reset state
+        // 1. Prepare for new request
         parser_ = std::make_shared<http::request_parser<http::string_body>>();
         stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
 
-        // Read the request
+        // 2. Read Request
         auto [ec_read, keep_alive] = co_await do_read_request();
         if (ec_read) {
             if (ec_read == http::error::end_of_stream) {
@@ -61,68 +66,57 @@ asio::awaitable<void> HttpSession::do_session() {
             } else {
                 fail(ec_read, "read");
             }
-            co_return;  // Stop session
-        }
-
-        const auto& req = parser_->get();
-        if (beast::websocket::is_upgrade(req)) {
-            spdlog::info("Handling WebSocket Upgrade");
-
-            // Create a dummy response object (Router expects it, even if unused for WS)
-            http::response<http::string_body> res;
-
-            // Pass the socket (stream_) to the router.
-            // The Router -> ActiveSessions will MOVE the socket to WebSocketSession.
-            router_->RouteQuery(req, res, stream_);
-
-            // IMPORTANT: The socket is now gone (moved).
-            // We must stop this HTTP session immediately.
             co_return;
         }
 
-        // Process the request and build a response
-        http::response<http::string_body> res = do_build_response();
+        //requets gets read to parser in the do_read_request function
+        const auto& req = parser_->get();
 
-        // write the response
+        // 3. Handle WebSocket Upgrade
+        if (beast::websocket::is_upgrade(req)) {
+            spdlog::info("Upgrading to WebSocket...");
+            http::response<http::string_body> dummy_res;
+
+            // Router moves the socket to WebSocketSession
+            router_->RouteQuery(req, dummy_res, stream_);
+
+            // Session ends here as socket is moved
+            co_return;
+        }
+
+        // 4. Handle Standard HTTP
+        auto res = do_build_response();
+
         auto ec_write = co_await do_write_response(res);
         if (ec_write) {
             fail(ec_write, "write");
-            co_return;  // Stop session
+            co_return;
         }
 
-        // 5. Handle keep-alive
         if (!keep_alive) {
-            spdlog::info("closing http session");
             co_await do_graceful_close();
-            co_return;  // Stop session
+            co_return;
         }
 
-        // Reset for the next loop
         reset_for_next_request();
     }
 }
 
 asio::awaitable<std::tuple<beast::error_code, bool>> HttpSession::do_read_request() {
     // Read Header
-    auto [ec_header, bytes_header] = co_await http::async_read_header(
+    auto [ec_head, _] = co_await http::async_read_header(
         stream_, buffer_, *parser_, asio::as_tuple(asio::use_awaitable));
 
-    if (ec_header) {
-        co_return std::make_tuple(ec_header, false);
-    }
+    if (ec_head) co_return std::make_tuple(ec_head, false);
 
-    // Read Body (if not OPTIONS)
+    // Read Body (Skip for OPTIONS/GET usually, but parser handles it)
     if (!is_options_request()) {
-        stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
+         auto [ec_body, __] = co_await http::async_read(
+             stream_, buffer_, *parser_, asio::as_tuple(asio::use_awaitable));
 
-        auto [ec_body, bytes_body] = co_await http::async_read(stream_, buffer_, *parser_,
-                                                               asio::as_tuple(asio::use_awaitable));
-        if (ec_body) {
-            co_return std::make_tuple(ec_body, false);
-        }
+         if (ec_body) co_return std::make_tuple(ec_body, false);
     }
 
-    // Success
     co_return std::make_tuple(beast::error_code{}, parser_->get().keep_alive());
 }
 
@@ -130,62 +124,48 @@ http::response<http::string_body> HttpSession::do_build_response() {
     http::response<http::string_body> res;
     const auto& req = parser_->get();
 
-    // cheack for  pre-flight requests
     if (is_options_request()) {
-        server::models::ResponseBuilder::build_options_response(res, req.version(),
-                                                                req.keep_alive());
+        server::models::ResponseBuilder::build_options_response(res, req.version(), req.keep_alive());
     } else {
         res.version(req.version());
         res.keep_alive(req.keep_alive());
-        spdlog::info("Routing");
+        //router fills the response 
         router_->RouteQuery(req, res, stream_);
     }
-    return res;  // Return the response by value
+    return res;
 }
 
-asio::awaitable<beast::error_code> HttpSession::do_write_response(
-    http::response<http::string_body>& res) {
-    beast::error_code ec_opt;
-    ec_opt = stream_.socket().set_option(tcp::no_delay(true), ec_opt);
-    if (ec_opt) {
-        fail(ec_opt, "set_option (TCP_NODELAY)");
+asio::awaitable<beast::error_code> HttpSession::do_write_response(http::response<http::string_body>& res) {
+    res.prepare_payload();
+
+    // Optimization: Disable Nagle's algorithm
+    beast::error_code ec;
+    stream_.socket().set_option(tcp::no_delay(true), ec);
+
+    auto [ec_write, bytes] = co_await http::async_write(stream_, res, asio::as_tuple(asio::use_awaitable));
+
+    if (!ec_write) {
+        spdlog::debug("Sent response: {} bytes", bytes);
     }
-
-    auto [ec_write, bytes_write] =
-        co_await http::async_write(stream_, res, asio::as_tuple(asio::use_awaitable));
-
-    if (ec_write) {
-        co_return ec_write;
-    }
-
-    spdlog::info("Response sent: {}", bytes_write);
-    co_return beast::error_code{};
+    co_return ec_write;
 }
 
 asio::awaitable<void> HttpSession::do_graceful_close() {
-    spdlog::info("graceful closed");
     beast::error_code ec;
-    ec = stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
+    stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
+
     if (ec && ec != beast::errc::not_connected) {
         fail(ec, "shutdown");
     }
 
-    stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
-
-    // Drain the socket to read the FIN packet
-    beast::flat_buffer drain_buffer;
-
-    // We'll use try/catch here, since we don't care about the result,
-    // just that the operation finished.
+    // Drain remaining data
+    beast::flat_buffer drain;
     try {
-        co_await stream_.async_read_some(drain_buffer.prepare(DRAIN_BUFFER_SIZE),
-                                         asio::use_awaitable  // No as_tuple, we'll catch exceptions
-        );
-    } catch (const std::exception&) {
-        // Ignore all errors during drain (e.g., client hung up)
+        stream_.expires_after(std::chrono::seconds(1));
+        co_await stream_.async_read_some(drain.prepare(DRAIN_BUFFER_SIZE), asio::use_awaitable);
+    } catch (...) {
+        // Expected behavior: Client closes connection or timeout
     }
-
-    // The coroutine resumes here. Now we do the final close.
     do_close();
 }
 
@@ -200,11 +180,7 @@ void HttpSession::reset_for_next_request() {
 
 void HttpSession::do_close() {
     beast::error_code ec;
-    ec = stream_.socket().cancel(ec);
-
-    if (ec && ec != beast::errc::not_connected) {
-        fail(ec, "close");
-    }
+    stream_.socket().close(ec);
 }
 
-}  // namespace server::core
+} // namespace server::core

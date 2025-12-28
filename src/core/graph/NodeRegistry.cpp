@@ -6,9 +6,10 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
-
+#include <spdlog/spdlog.h>
 #include "NodeFactory.hpp"
 #include "Nodes.hpp"
+#include "boost/json/object.hpp"
 #include "types.hpp"
 
 
@@ -68,18 +69,18 @@ std::shared_ptr<Node> CreateDelay(boost::asio::io_context&, const json::object& 
     return node;
 }
 
-std::shared_ptr<Node> CreateFileOptions(boost::asio::io_context&, const json::ojsonect& data) {
+std::shared_ptr<Node> CreateFileOptions(boost::asio::io_context&, const json::object& data) {
     auto node = std::make_shared<FileOptionsNode>();
     node->gain = require<double>(data, "gain");
     return node;
 }
 
-std::shared_ptr<Node> CreateClients(boost::asio::io_context&, const json::ojsonect& data) {
+std::shared_ptr<Node> CreateClients(boost::asio::io_context&, const json::object& data) {
     auto node = std::make_unique<ClientsNode>();
 
     if (data.contains("clients")) {
         for (const auto& v : require<json::array>(data, "clients")) {
-            const auto& client_ojson = v.as_ojsonect();
+            const auto& client_ojson = v.as_object();
             std::string ip = require<std::string>(client_ojson, "ip");
 
             // Handle port as Number (Standard) or String (Legacy/Typo)

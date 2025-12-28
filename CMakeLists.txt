@@ -68,7 +68,14 @@ FetchContent_Declare(aws_sigv4
     GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(spdlog boost aws_sigv4)
+FetchContent_Declare(tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG        v3.4.0
+    GIT_SHALLOW    TRUE
+)
+
+
+FetchContent_MakeAvailable(spdlog boost aws_sigv4 tomlplusplus)
 
 # 4. OpenSSL
 find_package(OpenSSL REQUIRED)
@@ -113,6 +120,7 @@ target_link_libraries(hermes_dependencies INTERFACE
     OpenSSL::SSL
     OpenSSL::Crypto
     awssigv4
+    tomlplusplus::tomlplusplus
 )
 
 if(HERMES_USE_IO_URING)
@@ -152,6 +160,7 @@ set(SOURCES_CORE
     src/core/session/Session.cpp
     src/core/graph/NodeRegistry.cpp
     src/core/graph/Nodes.cpp
+    src/core/graph/AudioExecutor.cpp
 )
 
 # =============================================================================

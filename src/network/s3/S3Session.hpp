@@ -1,51 +1,25 @@
 
 #pragma once
-#include <filesystem>  // Added: For std::filesystem::path
-#include <memory>      // For std::enable_shared_from_this
+#include <filesystem>
+#include <memory>
 #include <string>
 #include <string_view>
-#include <utility>  // Added: For std::pair
+#include <utility>
 
 // --- Boost.Asio Includes ---
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/ip/tcp.hpp>       // For tcp::resolver
-#include <boost/asio/stream_file.hpp>  // Added: For asio::stream_file
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/stream_file.hpp>
 
 // --- Boost.Beast Includes ---
-// Removed: <boost/beast/core/flat_buffer.hpp> (no longer a member)
 #include <boost/beast/core/flat_buffer.hpp>
 #include <boost/beast/core/tcp_stream.hpp>
 #include <boost/beast/http/empty_body.hpp>
-#include <boost/beast/http/message.hpp>  // For http::request
+#include <boost/beast/http/message.hpp>
 
 #include "types.hpp"
-
-// --- S3 Configuration ---
-// (This section is unchanged, as it was already clean)
-static constexpr std::size_t STREAM_CHUNK_SIZE = 128 * 1024;
-inline constexpr std::string_view DEFAULT_ACCESS_KEY = "minioadmin";
-inline constexpr std::string_view DEFAULT_SECRET_KEY = "minioadmin123";
-inline constexpr std::string_view DEFAULT_REGION = "us-east-1";
-inline constexpr std::string_view DEFAULT_HOST = "localhost";
-inline constexpr std::string_view DEFAULT_PORT = "9000";
-inline constexpr std::string_view DEFAULT_SERVICE = "s3";
-inline constexpr std::string_view DEFAULT_BUCKET = "audio-files";
-
-inline std::string get_env_or_default(const char* name, std::string_view default_val) {
-    const char* val = std::getenv(name);
-    return (val && val[0]) ? val : std::string(default_val);
-}
-
-struct S3Config {
-    std::string access_key{DEFAULT_ACCESS_KEY};
-    std::string secret_key{DEFAULT_SECRET_KEY};
-    std::string region{DEFAULT_REGION};
-    std::string host{get_env_or_default("S3_HOST", DEFAULT_HOST)};
-    std::string port{get_env_or_default("S3_PORT", DEFAULT_PORT)};
-    std::string service{DEFAULT_SERVICE};
-    std::string bucket{DEFAULT_BUCKET};
-};
+#include "config.hpp"
 
 /**
  * @brief Manages a single, "one-shot" connection to S3 to download a file.

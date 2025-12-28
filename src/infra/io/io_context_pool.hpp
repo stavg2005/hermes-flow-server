@@ -22,7 +22,6 @@ class io_context_pool {
   void run();
 
   // Stops all io_context objects and joins all threads.
-
   void stop();
 
   //@brief Get an io_context from the pool in a round-robin fashion.

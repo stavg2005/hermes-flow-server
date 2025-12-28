@@ -26,15 +26,14 @@ std::string ActiveSessions::create_session(const boost::json::object& jobj) {
     spdlog::debug("Creating session with ID: {}", session_id);
 
     // 2. Parse Graph & Create Session
-    // Note: We access pool_ only after the check above
     boost::asio::io_context& io = pool_->get_io_context();
     Graph g = parse_graph(io, jobj);
 
     spdlog::debug("Graph parsed for session {}. Node count: {}", session_id, g.nodes.size());
-
+    //3.Create the session
     auto session = std::make_shared<Session>(io, session_id, std::move(g));
 
-    // 3. Register Thread-Safely
+    // 4. Register Thread-Safely
     {
         std::lock_guard<std::mutex> lock(mutex_);
         sessions_[session_id] = std::move(session);
@@ -44,7 +43,7 @@ std::string ActiveSessions::create_session(const boost::json::object& jobj) {
     return session_id;
 }
 
-void ActiveSessions::create_and_run_WebsocketSession(std::string audio_session_id, const req_t& req,
+void ActiveSessions::create_and_run_WebsocketSession(const std::string &audio_session_id, const req_t& req,
                                                      boost::beast::tcp_stream& stream) {
     spdlog::info("Attaching WebSocket to session {}", audio_session_id);
 
@@ -65,6 +64,12 @@ void ActiveSessions::create_and_run_WebsocketSession(std::string audio_session_i
     // Link WebSocket -> Audio Session
     session->AttachObserver(std::make_shared<WebSocketSessionObserver>(websocket));
 
+        // 4. Register Thread-Safely
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        websocket_sessions_[audio_session_id] = std::move(websocket);
+        spdlog::debug("WebSocketSession {} registered.", audio_session_id);
+    }
     // Launch Session Lifecycle
     asio::co_spawn(
         pool_->get_io_context(),

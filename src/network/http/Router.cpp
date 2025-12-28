@@ -1,123 +1,92 @@
 #include "Router.hpp"
 
-#include <memory>
-#include <stdexcept>  // For std::runtime_error
+#include <spdlog/spdlog.h>
+
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/json.hpp>
+#include <stdexcept>
 #include <string>
 
-#include "S3Client.hpp"
-#include "boost/asio/io_context.hpp"
-#include "boost/beast/http/status.hpp"
-#include "boost/beast/http/verb.hpp"  // Use primary boost/json.hpp
-#include "boost/beast/websocket/rfc6455.hpp"
-#include "boost/url/url_view.hpp"
-#include "spdlog/spdlog.h"
 
 #include "types.hpp"
 
 // Define type aliases for readability
 using req_t = http::request<http::string_body>;
 using res_t = http::response<http::string_body>;
+Router::Router(std::shared_ptr<ActiveSessions> active,//NOLINT
+               std::shared_ptr<io_context_pool> pool)
+    : active_(std::move(active)), pool_(std::move(pool)) {}
 
-void Router::RouteQuery(const req_t& req, res_t& res, boost::beast::tcp_stream& stream) {
-    try {
-        boost::urls::url_view url{req.target()};
-        std::string path{url.path()};
+void Router::RouteQuery(const req_t& req, res_t& res,//NOLINT
+                        boost::beast::tcp_stream& stream) {
+  try {
+    boost::urls::url_view url{req.target()};
+    std::string path{url.path()}; //NOLINT
 
-        if (path.starts_with("/transmit/") && req.method() == http::verb::post) {
-            handle_transmit(req, res);
-        } else if (path.starts_with("/stop/") && req.method() == http::verb::post) {
-            handle_stop(url, res);
-        } else if (path.starts_with("/download/") && req.method() == http::verb::post) {
-            handle_download(url, res);
-        } else if (path.starts_with("/connect/") && req.method() == http::verb::get) {
-            handle_websocket_request(req, res, stream);
-        }
-
-        else {
-            throw std::runtime_error("Route not found");
-        }
-    } catch (const std::exception& e) {
-        http::status status_code = http::status::internal_server_error;
-        if (std::string(e.what()) == "Invalid JSON" ||
-            std::string(e.what()) == "JSON root must be an object") {
-            status_code = http::status::bad_request;
-        } else if (std::string(e.what()) == "Route not found") {
-            status_code = http::status::not_found;
-        }
-        spdlog::error(e.what());
-        ResponseBuilder::build_error_response(res, e.what(), req.version(),
-                                              req.keep_alive(),  // Pass keep_alive
-                                              status_code);
+    if (req.method() == http::verb::post && path.starts_with("/transmit/")) { //NOLINT
+      handle_transmit(req, res);
+    } else if (req.method() == http::verb::get &&
+               path.starts_with("/connect/")) {
+      handle_websocket_request(req, res, stream);
+    } else if (req.method() == http::verb::post && path.starts_with("/stop/")) {
+      handle_stop(url, res);
+    } else {
+      throw std::runtime_error("Route not found");
     }
-}
+  } catch (const std::exception& e) {
+    spdlog::error("Routing Error: {}", e.what());
 
-// --- Handler Functions ---
+    http::status status = http::status::internal_server_error;
+    std::string msg = e.what();
 
-void Router::handle_stop(boost::urls::url_view& url, res_t& res) {
-    throw std::runtime_error("Stop endpoint is not implemented");
-}
-
-void Router::handle_download(boost::urls::url_view& url, res_t& res) {
-    spdlog::info("in handle_download");
-
-    auto params = url.params();
-    if (!params.contains("file_name")) {
-        throw std::runtime_error("Missing file_name");
+    if (msg == "Invalid JSON" || msg == "JSON root must be a json object") { //NOLINT
+      status = http::status::bad_request;
+    } else if (msg == "Route not found") {
+      status = http::status::not_found;
     }
-    spdlog::info("request contains ");
-    auto it = params.find("file_name");
 
-    std::string file_name((*it)->value);
-    auto& ioc = pool_->get_io_context();
-    try {
-        spdlog::info("Creating S3 session for file: {}", file_name);
-        auto session = std::make_shared<S3Session>(ioc);
-        spdlog::info("S3Session created");
-        session->RequestFile(file_name);
-        spdlog::info("RequestFile called");
-    } catch (const std::exception& e) {
-        spdlog::critical("Crash in S3 setup: {}", e.what());
-    } catch (...) {
-        spdlog::critical("Unknown crash in S3 setup");
-    }
+    ResponseBuilder::build_error_response(res, msg, req.version(),
+                                          req.keep_alive(), status);
+  }
 }
 
 void Router::handle_transmit(const req_t& req, res_t& res) {
-    //  Parse JSON
-    spdlog::debug("in handle transmit");
-    sys::error_code jec;
-    //get json graph from body
-    json::value jv = json::parse(req.body(), jec);
-    if (jec) {
-        throw std::runtime_error("Invalid JSON");
-    }
+  spdlog::debug("Handling /transmit request");
 
-    // Validate JSON structure
-    if (!jv.is_object()) {
-        throw std::runtime_error("JSON root must be an object");
-    }
+  boost::system::error_code jec;
+  json::value jv = json::parse(req.body(), jec);
 
-    auto id = active_->create_session(jv.as_object());
-    spdlog::debug("In router created session with id {}", id);
-    ResponseBuilder::build_success_response(res, id, req.version());
+  if (jec) throw std::runtime_error("Invalid JSON");
+  if (!jv.is_object())
+    throw std::runtime_error("JSON root must be an ojsonect");
+
+  // Delegate to ActiveSessions
+  auto id = active_->create_session(jv.as_object());
+
+  ResponseBuilder::build_success_response(res, id, req.version());
 }
+
 void Router::handle_websocket_request(const req_t& req, res_t& res,
                                       boost::beast::tcp_stream& stream) {
-    if (!beast::websocket::is_upgrade(req)) {
-        throw std::runtime_error("Request Must be Upgradable");
-    }
+  if (!beast::websocket::is_upgrade(req)) {
+    throw std::runtime_error("Request is not a WebSocket upgrade");
+  }
 
-    spdlog::info("got a websocket request");
-    boost::urls::url_view url{req.target()};
+  boost::urls::url_view url{req.target()};
+  auto params = url.params();
+  auto it = params.find("id");
 
-    auto params = url.params();
-    if (!params.contains("id")) {
-        throw std::runtime_error("Missing ID");
-    }
+  if (it == params.end()) {
+    throw std::runtime_error("Missing query parameter: id");
+  }
 
-    auto it = params.find("id");
+  std::string id((*it)->value);
+  spdlog::info("Attaching WebSocket to session: {}", id);
 
-    std::string id((*it)->value);
+  active_->create_and_run_WebsocketSession(id, req, stream);
+}
 
-    active_->create_and_run_WebsocketSession(id, req, stream);
+void Router::handle_stop(boost::urls::url_view&, res_t&) {
+  throw std::runtime_error("Stop endpoint not implemented.");
 }

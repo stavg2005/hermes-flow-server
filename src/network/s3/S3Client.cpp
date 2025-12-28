@@ -8,6 +8,6 @@ S3Client::S3Client(S3Config cfg) : cfg_(std::move(cfg)) {
 
   std::shared_ptr<S3Session> S3Client::CreateSession(
      asio::io_context &ioc) {
-        spdlog::info("creating session");
+        spdlog::trace("creating session");
     return std::make_shared<S3Session>(ioc, cfg_);
   }

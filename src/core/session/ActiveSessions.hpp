@@ -33,7 +33,7 @@ public:
     /**
      * @brief Promotes an HTTP connection to a WebSocket and attaches it to an existing audio session.
      */
-    void create_and_run_WebsocketSession(std::string audio_session_id,
+    void create_and_run_WebsocketSession(const std::string &audio_session_id,
                                          const req_t& req,
                                          boost::beast::tcp_stream& stream);
 
