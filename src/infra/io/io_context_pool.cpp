@@ -49,7 +49,7 @@ void io_context_pool::stop() {
 }
 
 asio::io_context& io_context_pool::get_io_context() {
-  // Round-robin selection
+  // Thread safe Round-robin selection
   std::size_t idx = next_io_context_.fetch_add(1, std::memory_order_relaxed) %
                     io_contexts_.size();
 

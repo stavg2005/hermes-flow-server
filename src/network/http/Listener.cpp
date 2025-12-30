@@ -36,7 +36,10 @@ listener::listener(asio::io_context& main_ioc, io_context_pool& pool, const tcp:
         fail(ec, "open");
         return;
     }
-
+    // Set SO_REUSEADDR to allow immediate reuse of the port after the server stops.
+    // This prevents the "Address already in use" error caused by the OS keeping the port
+    // in a TIME_WAIT state for a few minutes after the process exits.
+    // Crucial for development and quick restarts.
     acceptor_.set_option(asio::socket_base::reuse_address(true), ec);
     if (ec) {
         fail(ec, "set_option(reuse_address)");
@@ -50,7 +53,7 @@ listener::listener(asio::io_context& main_ioc, io_context_pool& pool, const tcp:
         return;
     }
 
-    // Start listening for connections
+    // Start listening for connections with backlog queue with the max size
     ec2 = acceptor_.listen(asio::socket_base::max_listen_connections, ec);
     if (ec2) {
         fail(ec, "listen");
@@ -63,6 +66,7 @@ listener::listener(asio::io_context& main_ioc, io_context_pool& pool, const tcp:
 void listener::run() {
     spdlog::debug(("Starting to accept connections.. "));
 
+    //fire and forget corutine and continune listening
     asio::co_spawn(
         acceptor_.get_executor(), [this, self = shared_from_this()]() { return do_accept(); },
         asio::detached);
@@ -70,8 +74,10 @@ void listener::run() {
 
 asio::awaitable<void> listener::do_accept() {
     for (;;) {
+      // get an io_context from the pool for the future sessions socket
         auto& pool_ioc = pool_.get_io_context();
 
+        //suspends until a connection attempted  has been detected ,upon aconnection a new socket that is connected to the client would be returned 
         auto [ec, socket] =
             co_await acceptor_.async_accept(pool_ioc, asio::as_tuple(asio::use_awaitable));
 

@@ -6,8 +6,6 @@
 
 #include "NodeFactory.hpp"
 
-
-
 namespace {
 
 // --- Helpers ---
@@ -24,7 +22,7 @@ T require(const json::object& obj, const char* key) {
     }
 }
 
-} // namespace
+}  // namespace
 
 // =========================================================
 //  Graph Parser
@@ -69,8 +67,12 @@ Graph parse_graph(boost::asio::io_context& io, const json::object& o) {
         std::string source_id = require<std::string>(edge_obj, "source");
         std::string target_id = require<std::string>(edge_obj, "target");
 
-        if (!g.node_map.contains(source_id)) throw std::runtime_error("Missing source: " + source_id);
-        if (!g.node_map.contains(target_id)) throw std::runtime_error("Missing target: " + target_id);
+        if (!g.node_map.contains(source_id)) {
+            throw std::runtime_error("Missing source: " + source_id);
+        }
+        if (!g.node_map.contains(target_id)) {
+            throw std::runtime_error("Missing target: " + target_id);
+        }
 
         auto source = g.node_map.at(source_id);
         auto target = g.node_map.at(target_id);

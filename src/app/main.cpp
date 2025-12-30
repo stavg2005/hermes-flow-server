@@ -19,70 +19,65 @@
 #include "types.hpp"
 
 static void setup_logging() {
-  std::vector<spdlog::sink_ptr> sinks;
+    std::vector<spdlog::sink_ptr> sinks;
 
-  // A. Console Sink
-  auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-  console_sink->set_level(spdlog::level::debug);
-  sinks.push_back(console_sink);
+    // A. Console Sink
+    auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    console_sink->set_level(spdlog::level::debug);
+    sinks.push_back(console_sink);
 
-  // B. Rotating File Sink (Max 5MB, 3 files)
-  constexpr size_t MAX_SIZE = 1024UZ * 1024 * 5;
-  constexpr size_t MAX_FILES = 3;
-  auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-      "logs/server.log", MAX_SIZE, MAX_FILES);
-  file_sink->set_level(spdlog::level::trace);
-  sinks.push_back(file_sink);
+    // B. Rotating File Sink (Max 5MB, 3 files)
+    constexpr size_t MAX_SIZE = 1024UZ * 1024 * 5;
+    constexpr size_t MAX_FILES = 3;
+    auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>("logs/server.log",
+                                                                            MAX_SIZE, MAX_FILES);
+    file_sink->set_level(spdlog::level::trace);
+    sinks.push_back(file_sink);
 
-  // C. Register Logger
-  auto logger =
-      std::make_shared<spdlog::logger>("server", sinks.begin(), sinks.end());
-  spdlog::register_logger(logger);
-  spdlog::set_default_logger(logger);
+    // C. Register Logger
+    auto logger = std::make_shared<spdlog::logger>("server", sinks.begin(), sinks.end());
+    spdlog::register_logger(logger);
+    spdlog::set_default_logger(logger);
 
-  // D. Global Formatting
-  spdlog::set_level(spdlog::level::debug);
-  spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [thread %t] %v");
-  spdlog::flush_on(spdlog::level::debug);
+    // D. Global Formatting
+    spdlog::set_level(spdlog::level::debug  );
+    spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [thread %t] %v");
+    spdlog::flush_on(spdlog::level::debug);
 }
 
 int main(int argc, char* argv[]) {
-  try {
-    setup_logging();
+    try {
+        setup_logging();
 
-    //  1.Load Configuration
-    AppConfig cfg = LoadConfig("config.toml");
+        //  1.Load Configuration
+        AppConfig cfg = LoadConfig("../config.toml");
 
-    // 2. Initialize Node Types
-    RegisterBuiltinNodes();
- 
+        // 2. Initialize Node Types
+        RegisterBuiltinNodes();
 
-    // 3. Server Setup
-    asio::io_context main_ioc;
-    auto server = std::make_shared<Server>(main_ioc, cfg.server.address,
-                                           std::to_string(cfg.server.port),
-                                           cfg.server.threads);
+        // 3. Server Setup
+        asio::io_context main_ioc;
+        auto server = std::make_shared<Server>(main_ioc, cfg.server.address,
+                                               std::to_string(cfg.server.port), cfg.server.threads);
 
-    // 4. Graceful Shutdown Signal
-    asio::signal_set signals(main_ioc, SIGINT, SIGTERM);
-    signals.async_wait(
-        [&server](const boost::system::error_code&, int signal_number) {
-          spdlog::info("Stop signal ({}) received. Shutting down...",
-                       signal_number);
-          server->Stop();
+        // 4. Graceful Shutdown Signal
+        asio::signal_set signals(main_ioc, SIGINT, SIGTERM);
+        signals.async_wait([&server](const boost::system::error_code&, int signal_number) {
+            spdlog::info("Stop signal ({}) received. Shutting down...", signal_number);
+            server->Stop();
         });
 
-    spdlog::info("Hermes Flow Server starting on {}:{}", cfg.server.address, cfg.server.port);
+        spdlog::info("Hermes Flow Server starting on {}:{}", cfg.server.address, cfg.server.port);
 
-    // 5. Run
-    server->Start();
+        // 5. Run
+        server->Start();
 
-    spdlog::info("Server shutdown complete.");
+        spdlog::info("Server shutdown complete.");
 
-  } catch (const std::exception& e) { //NOLINT
-    spdlog::critical("Fatal Error: {}", e.what());
-    return EXIT_FAILURE;
-  }
+    } catch (const std::exception& e) {  // NOLINT
+        spdlog::critical("Fatal Error: {}", e.what());
+        return EXIT_FAILURE;
+    }
 
-  return EXIT_SUCCESS;
+    return EXIT_SUCCESS;
 }

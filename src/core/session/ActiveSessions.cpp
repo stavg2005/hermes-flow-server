@@ -4,14 +4,14 @@
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
+#include <boost/uuid/uuid.hpp>             // Core UUID class
+#include <boost/uuid/uuid_generators.hpp>  // Generators (Random, Name-based)
+#include <boost/uuid/uuid_io.hpp>          // Streaming operators (to_string)
 #include <stdexcept>
 
 #include "Json2Graph.hpp"
 #include "Nodes.hpp"
 #include "WebSocketSessionObserver.hpp"
-
-
-
 
 ActiveSessions::ActiveSessions(std::shared_ptr<io_context_pool> pool) : pool_(std::move(pool)) {}
 
@@ -22,7 +22,10 @@ std::string ActiveSessions::create_session(const boost::json::object& jobj) {
         throw std::runtime_error("Server not initialized: pool_ is null");
     }
 
-    std::string session_id = std::to_string(next_session_id_++);
+    boost::uuids::random_generator generator;
+    boost::uuids::uuid uuid = generator();
+    
+    std::string session_id = boost::uuids::to_string(uuid);
     spdlog::debug("Creating session with ID: {}", session_id);
 
     // 2. Parse Graph & Create Session
@@ -30,7 +33,7 @@ std::string ActiveSessions::create_session(const boost::json::object& jobj) {
     Graph g = parse_graph(io, jobj);
 
     spdlog::debug("Graph parsed for session {}. Node count: {}", session_id, g.nodes.size());
-    //3.Create the session
+    // 3.Create the session
     auto session = std::make_shared<Session>(io, session_id, std::move(g));
 
     // 4. Register Thread-Safely
@@ -43,7 +46,8 @@ std::string ActiveSessions::create_session(const boost::json::object& jobj) {
     return session_id;
 }
 
-void ActiveSessions::create_and_run_WebsocketSession(const std::string &audio_session_id, const req_t& req,
+void ActiveSessions::create_and_run_WebsocketSession(const std::string& audio_session_id,
+                                                     const req_t& req,
                                                      boost::beast::tcp_stream& stream) {
     spdlog::info("Attaching WebSocket to session {}", audio_session_id);
 
@@ -64,7 +68,7 @@ void ActiveSessions::create_and_run_WebsocketSession(const std::string &audio_se
     // Link WebSocket -> Audio Session
     session->AttachObserver(std::make_shared<WebSocketSessionObserver>(websocket));
 
-        // 4. Register Thread-Safely
+    // 4. Register Thread-Safely
     {
         std::lock_guard<std::mutex> lock(mutex_);
         websocket_sessions_[audio_session_id] = std::move(websocket);

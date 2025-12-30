@@ -1,12 +1,13 @@
 [server]
-address = "0.0.0.0"
-port = 8080
+address = "127.0.0.1"
+port = 5000
 threads = 4
 
 [s3]
-host = "localhost"
+host = "127.0.0.1"
 port = "9000"
 bucket = "audio-files"
 access_key = "minioadmin"
 secret_key = "minioadmin123"
 region = "us-east-1"
+service ="s3"

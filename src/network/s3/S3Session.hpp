@@ -18,8 +18,9 @@
 #include <boost/beast/http/empty_body.hpp>
 #include <boost/beast/http/message.hpp>
 
-#include "types.hpp"
 #include "config.hpp"
+#include "types.hpp"
+
 
 /**
  * @brief Manages a single, "one-shot" connection to S3 to download a file.
@@ -33,11 +34,10 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
      * @param cfg The S3 configuration (defaults to a local MinIO).
      */
     explicit S3Session(asio::io_context& ioc, const S3Config& cfg = {})
-        : ioc_(ioc),
-          cfg_(cfg),
-          resolver_(ioc),
-          stream_(ioc)
-    {}
+        : ioc_(ioc), cfg_(cfg), resolver_(ioc), stream_(ioc) {
+        AppConfig bruh = LoadConfig("../config.toml");
+        cfg_ = std::move(bruh.s3);
+    }
 
     /**
      * @brief Asynchronously requests a file download from S3.
@@ -69,7 +69,7 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
      */
     asio::awaitable<void> connect();
 
-  /**
+    /**
      * @brief Writes the HTTP request and reads/parses the HTTP response headers.
      * @return A pair:
      * 1. The expected Content-Length of the file.
@@ -97,13 +97,12 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
      * @return Total number of bytes written to disk.
      */
     asio::awaitable<size_t> stream_body_to_file(asio::stream_file& file, size_t expected_size,
-                                               beast::flat_buffer& header_buffer);
+                                                beast::flat_buffer& header_buffer);
 
     /**
      * @brief Performs a graceful shutdown and close of the socket.
      */
     void cleanup_socket();
-
 
     void fetch_files();
 

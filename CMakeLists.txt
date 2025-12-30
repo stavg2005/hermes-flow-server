@@ -7,7 +7,7 @@ project(HermesFlow
 )
 
 # =============================================================================
-# Build Configuration
+# 1. Build Options & Sanitizers
 # =============================================================================
 
 set(CMAKE_CXX_STANDARD 23)
@@ -19,10 +19,6 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# =============================================================================
-# Options & Sanitizers
-# =============================================================================
-
 option(ENABLE_ASAN  "Enable AddressSanitizer" OFF)
 option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 option(ENABLE_TSAN  "Enable ThreadSanitizer" OFF)
@@ -31,22 +27,18 @@ if(ENABLE_ASAN AND ENABLE_TSAN)
     message(FATAL_ERROR "ASan and TSan cannot be used together")
 endif()
 
+# Windows specific definitions
 if(WIN32)
-    add_definitions(
-        -D_WIN32_WINNT=0x0601
-        -DWIN32_LEAN_AND_MEAN
-        -DNOMINMAX
-        -D_CRT_SECURE_NO_WARNINGS
-    )
+    add_definitions(-D_WIN32_WINNT=0x0601 -DWIN32_LEAN_AND_MEAN -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS)
 endif()
 
 # =============================================================================
-# Dependencies (FetchContent)
+# 2. Dependencies
 # =============================================================================
 
 include(FetchContent)
 
-# 1. spdlog
+# A. Spdlog (Logging)
 set(SPDLOG_USE_STD_FORMAT ON CACHE BOOL "" FORCE)
 FetchContent_Declare(spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
@@ -54,33 +46,33 @@ FetchContent_Declare(spdlog
     GIT_SHALLOW    TRUE
 )
 
-# 2. Boost
-set(BOOST_INCLUDE_LIBRARIES asio beast json system url uuid filesystem)
+# B. Boost (Networking & JSON)
+set(BOOST_INCLUDE_LIBRARIES asio beast json system url uuid filesystem atomic) # Added atomic explicitly
 FetchContent_Declare(boost
     URL https://github.com/boostorg/boost/releases/download/boost-1.88.0/boost-1.88.0-cmake.zip
     DOWNLOAD_EXTRACT_TIMESTAMP ON
 )
 
-# 3. AWS SigV4
+# C. AWS SigV4 (S3 Authentication)
 FetchContent_Declare(aws_sigv4
     GIT_REPOSITORY https://github.com/zxwind/aws-sigv4-cpp.git
     GIT_TAG        master
     GIT_SHALLOW    TRUE
 )
 
+# D. toml++ (Configuration)
 FetchContent_Declare(tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
     GIT_TAG        v3.4.0
     GIT_SHALLOW    TRUE
 )
 
-
 FetchContent_MakeAvailable(spdlog boost aws_sigv4 tomlplusplus)
 
-# 4. OpenSSL
+# E. OpenSSL
 find_package(OpenSSL REQUIRED)
 
-# 5. AWS SigV4 Lib Setup
+# F. AWS SigV4 Library Wrapper
 add_library(awssigv4 STATIC
     ${aws_sigv4_SOURCE_DIR}/awssigv4.cc
     ${aws_sigv4_SOURCE_DIR}/awssigv4.h
@@ -88,7 +80,7 @@ add_library(awssigv4 STATIC
 target_include_directories(awssigv4 PUBLIC ${aws_sigv4_SOURCE_DIR})
 target_link_libraries(awssigv4 PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 
-# 6. io_uring (Linux only)
+# G. io_uring (Linux Async I/O optimization)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig QUIET)
     if(PKG_CONFIG_FOUND)
@@ -96,18 +88,22 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         if(URING_FOUND)
             set(HERMES_USE_IO_URING TRUE)
             message(STATUS "io_uring: Enabled")
-        else()
-            set(HERMES_USE_IO_URING FALSE)
-            message(WARNING "io_uring: Not found, disabled")
         endif()
     endif()
 endif()
 
 # =============================================================================
-# Common Interface (Flags & Links)
+# 3. Common Library Interface
 # =============================================================================
 
 add_library(hermes_dependencies INTERFACE)
+
+# FIX: Create a dummy 'atomic' library target on Windows.
+# Boost (and others) might try to link 'atomic' when they detect Clang, assuming it's Linux.
+# On Windows, atomic support is built-in, so 'atomic.lib' doesn't exist.
+if(WIN32 AND NOT TARGET atomic)
+    add_library(atomic INTERFACE)
+endif()
 
 target_link_libraries(hermes_dependencies INTERFACE
     spdlog::spdlog
@@ -117,11 +113,19 @@ target_link_libraries(hermes_dependencies INTERFACE
     Boost::system
     Boost::url
     Boost::filesystem
+    Boost::uuid
+    Boost::atomic
     OpenSSL::SSL
     OpenSSL::Crypto
     awssigv4
     tomlplusplus::tomlplusplus
 )
+
+# LINK ATOMIC CONDITIONALLY (The Fix)
+if(NOT WIN32)
+    # On Linux/macOS, we might need libatomic for 64-bit atomics on some archs
+    target_link_libraries(hermes_dependencies INTERFACE atomic)
+endif()
 
 if(HERMES_USE_IO_URING)
     target_compile_definitions(hermes_dependencies INTERFACE BOOST_ASIO_HAS_IO_URING=1)
@@ -130,10 +134,10 @@ if(HERMES_USE_IO_URING)
 endif()
 
 # =============================================================================
-# Project Sources (Grouped by Folder)
+# 4. Source Files
 # =============================================================================
 
-# Infrastructure (Audio, IO, Parsers)
+# Infrastructure
 set(SOURCES_INFRA
     src/infra/audio/alaw.cpp
     src/infra/io/io_context_pool.cpp
@@ -141,7 +145,7 @@ set(SOURCES_INFRA
     src/core/config/config.cpp
 )
 
-# Network (HTTP, RTP, S3)
+# Network
 set(SOURCES_NETWORK
     src/network/s3/S3Client.cpp
     src/network/s3/S3Session.cpp
@@ -154,7 +158,7 @@ set(SOURCES_NETWORK
     src/network/http/Server.cpp
 )
 
-# Core Logic (Sessions, Graph)
+# Core
 set(SOURCES_CORE
     src/core/session/ActiveSessions.cpp
     src/core/session/Session.cpp
@@ -164,7 +168,7 @@ set(SOURCES_CORE
 )
 
 # =============================================================================
-# Main Library (The Engine)
+# 5. The Engine Library
 # =============================================================================
 
 add_library(hermes_engine STATIC
@@ -174,10 +178,10 @@ add_library(hermes_engine STATIC
 )
 
 target_include_directories(hermes_engine PUBLIC
-    src                             # Allows: #include "core/session/Session.hpp"
-    src/core/session                # Allows: #include "Session.hpp"
-    src/core/graph                  # Allows: #include "Nodes.hpp"
-    src/core/config                 # Allows: #include "Config.hpp"
+    src
+    src/core/session
+    src/core/graph
+    src/core/config
     src/network/http
     src/network/rtp
     src/network/s3
@@ -189,20 +193,15 @@ target_include_directories(hermes_engine PUBLIC
 
 target_link_libraries(hermes_engine PUBLIC hermes_dependencies)
 
-
-target_link_libraries(hermes_engine PUBLIC hermes_dependencies)
-
 # =============================================================================
-# Main Executable
+# 6. Main Executable
 # =============================================================================
 
-# Note: Assuming you moved main.cpp to src/app/
 add_executable(Server src/app/main.cpp)
-
 target_link_libraries(Server PRIVATE hermes_engine)
 
 # =============================================================================
-# Sanitizer Flags (Applied to Executable)
+# 7. Sanitizer Configuration
 # =============================================================================
 
 if(ENABLE_ASAN OR ENABLE_UBSAN OR ENABLE_TSAN)
@@ -219,27 +218,7 @@ if(ENABLE_ASAN OR ENABLE_UBSAN OR ENABLE_TSAN)
         endif()
 
         list(JOIN SANITIZER_FLAGS "," SANITIZER_FLAGS_STR)
-        set(SANITIZER_COMPILE_FLAGS "-fsanitize=${SANITIZER_FLAGS_STR}" "-fno-omit-frame-pointer" "-g")
-
-        target_compile_options(Server PRIVATE ${SANITIZER_COMPILE_FLAGS})
-        target_link_options(Server PRIVATE ${SANITIZER_COMPILE_FLAGS})
+        target_compile_options(Server PRIVATE "-fsanitize=${SANITIZER_FLAGS_STR}" "-fno-omit-frame-pointer" "-g")
+        target_link_options(Server PRIVATE "-fsanitize=${SANITIZER_FLAGS_STR}")
     endif()
 endif()
-
-# =============================================================================
-# Build Summary
-# =============================================================================
-
-message(STATUS "")
-message(STATUS "=== HermesFlow Configuration ===")
-message(STATUS "Build type   : ${CMAKE_BUILD_TYPE}")
-message(STATUS "C++ standard : ${CMAKE_CXX_STANDARD}")
-message(STATUS "Compiler     : ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
-if(HERMES_USE_IO_URING)
-    message(STATUS "io_uring     : Enabled")
-endif()
-if(ENABLE_ASAN OR ENABLE_UBSAN OR ENABLE_TSAN)
-    message(STATUS "Sanitizers   : ${SANITIZER_FLAGS}")
-endif()
-message(STATUS "================================")
-message(STATUS "")

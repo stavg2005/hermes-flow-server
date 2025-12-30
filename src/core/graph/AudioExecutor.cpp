@@ -7,7 +7,6 @@
 #include "S3Session.hpp"
 #include "spdlog/spdlog.h"
 
-
 AudioExecutor::AudioExecutor(boost::asio::io_context& io, std::shared_ptr<Graph> graph)
     : io_(io), graph_(std::move(graph)) {
     if (!graph_ || !graph_->start_node) {
@@ -45,6 +44,8 @@ boost::asio::awaitable<void> AudioExecutor::FetchFiles() {
             // Check if file exists locally, otherwise download from S3
             if (!std::filesystem::exists(file_node->file_path)) {
                 spdlog::info("File missing: {}. Requesting from S3...", file_node->file_name);
+                // Heap-allocate the session to ensure a stable memory address for async operations
+                // and to keep heavy objects (buffers, sockets) off the stack.
                 auto s3_session = std::make_shared<S3Session>(io_);
                 co_await s3_session->RequestFile(file_node->file_name);
             }
