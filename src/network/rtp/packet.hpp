@@ -58,7 +58,7 @@ struct RTPPacket {
 
     void add_ssrc(uint32_t new_ssrc);
 
-    // ✅ Caller provides packet_buffer to fill, payload is copied into it
+
     std::optional<boost::span<uint8_t>>
     to_buffer(const boost::span<uint8_t>& packet_buffer) const;
 };

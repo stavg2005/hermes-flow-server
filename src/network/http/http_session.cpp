@@ -12,11 +12,10 @@
 #include "types.hpp"
 
 namespace {
-// Constants
-constexpr int SESSION_TIMEOUT_SECONDS = 15;
-constexpr int DRAIN_BUFFER_SIZE = 1024;
 
-// Helper: Report failures
+constexpr int SESSION_TIMEOUT_SECONDS = 15;
+constexpr int DRAIN_BUFFER_SIZE = 1024;  // Drain unread TCP data during shutdown
+constexpr int DRAIN_TIMEOUT_SECONDS = 1;
 void fail(beast::error_code ec, const char* what) {
     if (ec == beast::errc::stream_timeout) {
         spdlog::debug("[HttpSession] Stream timeout: {}", what);
@@ -27,7 +26,7 @@ void fail(beast::error_code ec, const char* what) {
         spdlog::error("[HttpSession] {} error: {}", what, ec.message());
     }
 }
-}  // namespace
+}
 
 namespace server::core {
 
@@ -41,7 +40,6 @@ HttpSession::HttpSession(tcp::socket&& socket, const std::shared_ptr<Router>& ro
 }
 
 void HttpSession::run() {
-    // fire and forget a corutine to handle the client http request
     asio::co_spawn(
         stream_.get_executor(), [self = shared_from_this()]() { return self->do_session(); },
         asio::detached);
@@ -50,16 +48,11 @@ void HttpSession::run() {
 asio::awaitable<void> HttpSession::do_session() {
     try {
         for (;;) {
-            // 1. Prepare for new request
-
-            // Use .emplace() to destruct the old parser and construct a new one in-place.
-            // This is crucial for HTTP Keep-Alive: we reuse the same HttpSession object for
-            // multiple requests, but we need a fresh parser state for each one.
-            // Unlike make_shared, this avoids heap allocation overhead per request.
+            // Reset parser per request (required for HTTP keep-alive)
             parser_.emplace();
+            parser_->body_limit(1024 * 1024 * 10);
             stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
 
-            // 2. Read Request
             auto [ec_read, keep_alive] = co_await do_read_request();
             if (ec_read) {
                 if (ec_read == http::error::end_of_stream) {
@@ -70,22 +63,17 @@ asio::awaitable<void> HttpSession::do_session() {
                 co_return;
             }
 
-            // requets gets read to parser in the do_read_request function
             const auto& req = parser_->get();
 
-            // 3. Handle WebSocket Upgrade
             if (beast::websocket::is_upgrade(req)) {
                 spdlog::info("Upgrading to WebSocket...");
                 http::response<http::string_body> dummy_res;
 
-                // Router moves the socket to WebSocketSession
                 router_->RouteQuery(req, dummy_res, stream_);
 
-                // Session ends here as socket is moved
                 co_return;
             }
 
-            // 4. Handle Standard HTTP
             auto res = do_build_response();
 
             auto ec_write = co_await do_write_response(res);
@@ -98,11 +86,6 @@ asio::awaitable<void> HttpSession::do_session() {
                 co_await do_graceful_close();
                 co_return;
             }
-
-            parser_.emplace();
-
-            // Re-apply limits after emplace
-            parser_->body_limit(1024 * 1024 * 10);
         }
     } catch (const std::exception& e) {
         spdlog::error("Session died: {}", e.what());
@@ -110,7 +93,6 @@ asio::awaitable<void> HttpSession::do_session() {
 }
 
 asio::awaitable<std::tuple<beast::error_code, bool>> HttpSession::do_read_request() {
-    // Read Header First
     auto [ec_head, _] = co_await http::async_read_header(stream_, buffer_, *parser_,
                                                          asio::as_tuple(asio::use_awaitable));
 
@@ -176,12 +158,13 @@ asio::awaitable<void> HttpSession::do_graceful_close() {
     // Drain remaining data
     beast::flat_buffer drain;
     try {
-        stream_.expires_after(std::chrono::seconds(1));
+        stream_.expires_after(std::chrono::seconds(DRAIN_TIMEOUT_SECONDS));
         co_await stream_.async_read_some(drain.prepare(DRAIN_BUFFER_SIZE), asio::use_awaitable);
     } catch (...) {
         // Expected behavior: Client closes connection or timeout
     }
     do_close();
+    co_return;
 }
 
 bool HttpSession::is_options_request() const {
@@ -193,4 +176,4 @@ void HttpSession::do_close() {
     stream_.socket().close(ec);
 }
 
-}  // namespace server::core
+} 

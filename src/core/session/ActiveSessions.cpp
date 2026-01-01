@@ -16,7 +16,7 @@
 ActiveSessions::ActiveSessions(std::shared_ptr<io_context_pool> pool) : pool_(std::move(pool)) {}
 
 std::string ActiveSessions::create_session(const boost::json::object& jobj) {
-    // 1. Safety Check
+
     if (!pool_) {
         spdlog::critical("ActiveSessions: io_context_pool is null!");
         throw std::runtime_error("Server not initialized: pool_ is null");
@@ -28,15 +28,14 @@ std::string ActiveSessions::create_session(const boost::json::object& jobj) {
     std::string session_id = boost::uuids::to_string(uuid);
     spdlog::debug("Creating session with ID: {}", session_id);
 
-    // 2. Parse Graph & Create Session
     boost::asio::io_context& io = pool_->get_io_context();
     Graph g = parse_graph(io, jobj);
 
     spdlog::debug("Graph parsed for session {}. Node count: {}", session_id, g.nodes.size());
-    // 3.Create the session
+
     auto session = std::make_shared<Session>(io, session_id, std::move(g));
 
-    // 4. Register Thread-Safely
+    // Register Thread-Safely
     {
         std::lock_guard<std::mutex> lock(mutex_);
         sessions_[session_id] = std::move(session);
@@ -61,31 +60,21 @@ void ActiveSessions::create_and_run_WebsocketSession(const std::string& audio_se
         session = it->second;
     }
 
-    // Handover socket to WebSocketSession
+
     auto websocket = std::make_shared<WebSocketSession>(stream.release_socket());
     websocket->do_accept(req);
 
-    // Link WebSocket -> Audio Session
+
     session->AttachObserver(std::make_shared<WebSocketSessionObserver>(websocket));
 
-    // 4. Register Thread-Safely
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
         websocket_sessions_[audio_session_id] = std::move(websocket);
         spdlog::debug("WebSocketSession {} registered.", audio_session_id);
     }
 
-    /* --------------------------------------------------------------------------
-     * Session Lifecycle & Cleanup
-     * --------------------------------------------------------------------------
-     * We launch the session as a "Detached Coroutine".
-     * * 1. **Keep-Alive**: The lambda captures 'sess' (shared_ptr), ensuring the
-     * Session object remains alive as long as the coroutine is running,
-     * even if 'ActiveSessions' drops its reference.
-     * * 2. **Automatic Cleanup**: When 'sess->start()' returns (due to error
-     * or completion), the coroutine continues to the cleanup block,
-     * removes the ID from the map, and logs the event.
-     */
+
     asio::co_spawn(
         pool_->get_io_context(),
         [this, self = shared_from_this(), id = audio_session_id,
@@ -96,20 +85,38 @@ void ActiveSessions::create_and_run_WebsocketSession(const std::string& audio_se
                 spdlog::error("[{}] Session error: {}", id, e.what());
             }
 
-            // Cleanup on finish
-            std::lock_guard<std::mutex> lock(mutex_);
-            sessions_.erase(id);
-            spdlog::debug("[{}] Session removed.", id);
+            remove_session(id);
         },
         asio::detached);
 }
 
-// Implementations for lookup methods (get, list_ids) should be added here
-// if they were previously missing, following the pattern:
-/*
-std::shared_ptr<Session> ActiveSessions::get(const std::string& id) const {
+ActiveSessions::RemoveStatus ActiveSessions::remove_session(const std::string& id) {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = sessions_.find(id);
-    return (it != sessions_.end()) ? it->second : nullptr;
+
+
+    auto session_it = sessions_.find(id);
+    if (session_it == sessions_.end()) {
+
+        return RemoveStatus::SessionNotFound;
+    }
+
+
+    session_it->second->stop();
+    sessions_.erase(session_it);
+    spdlog::info("[{}] Audio session stopped and removed.", id);
+
+
+    auto ws_it = websocket_sessions_.find(id);
+    if (ws_it != websocket_sessions_.end()) {
+        ws_it->second->Close();
+        websocket_sessions_.erase(ws_it);
+        spdlog::info("[{}] WebSocket session detached and closed.", id);
+
+        return RemoveStatus::Success;  
+    }
+
+    // Audio was removed, but WS wasn't there.
+    // This is technically a success, but we report the detail.
+    spdlog::warn("[{}] Audio removed, but WebSocket was missing.", id);
+    return RemoveStatus::WebSocketNotFound;
 }
-*/

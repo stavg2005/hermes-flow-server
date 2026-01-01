@@ -9,9 +9,7 @@ RTPPacketizer::RTPPacketizer(uint8_t payloadType, uint32_t ssrc,
     : payloadType_(payloadType), ssrc_(ssrc),
       timestampIncrement_(timestampIncrement) {}
 
-// gets an aleady encoded payload ,constructs an RTP Packet ,  Serialize the
-// packet into the caller's buffer and returns how many bytes wrote for future
-// async_send_to function
+
 size_t RTPPacketizer::packetize(boost::span<uint8_t> payload,
                                 boost::span<uint8_t> outBuffer) {
 

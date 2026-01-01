@@ -7,7 +7,6 @@
 
 #include "ISessionObserver.hpp"
 
-
 // Forward declarations
 class Graph;
 
@@ -24,7 +23,7 @@ class Session : public std::enable_shared_from_this<Session> {
      * * @return A coroutine that runs until the session ends or is stopped.
      */
     boost::asio::awaitable<void> start();
-    boost::asio::awaitable<void> stop();
+    void stop();
 
     void AddClient(std::string& ip, uint16_t port);
     void AttachObserver(std::shared_ptr<ISessionObserver> observer);

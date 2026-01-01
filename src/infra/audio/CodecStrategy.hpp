@@ -7,7 +7,7 @@
 
 /**
  * @brief Interface for Audio Encoding Algorithms.
- * * @details
+ *  @details
  * To add a new Codec (e.g., Opus):
  * 1. Implement this interface.
  * 2. Return the correct Payload Type (e.g., 111 for Opus dynamic).
@@ -18,7 +18,8 @@ struct ICodecStrategy {
     virtual ~ICodecStrategy() = default;
 
     /**
-     * @brief Encodes raw PCM data into the output buffer.
+     * @brief Encodes raw PCM data into the output buffer. pcm is expected to contain native-endian,
+     * 16-bit aligned PCM samples.
      * @param pcm Input PCM data (16-bit).
      * @param out_buffer Destination buffer for encoded bytes.
      * @return Number of bytes written to out_buffer.
@@ -33,20 +34,16 @@ struct ICodecStrategy {
 // 2. Concrete A-Law Strategy
 struct ALawCodecStrategy : ICodecStrategy {
     size_t Encode(std::span<const uint8_t> pcm, std::span<uint8_t> out_buffer) override {
-        // Calculate sample count (16-bit samples)
         const size_t sample_count = pcm.size() / sizeof(int16_t);
 
-        // Safety check
         if (out_buffer.size() < sample_count) {
             return 0;
         }
 
-        // Reinterpret bytes as int16_t samples
         auto samples =
             std::span<const int16_t>(reinterpret_cast<const int16_t*>(pcm.data()), sample_count);
 
-        // Encode directly into the output buffer (Zero-Copy from caller perspective)
-        encode_alaw(samples, out_buffer);  //
+        encode_alaw(samples, out_buffer);
 
         return sample_count;  // A-Law is 1 byte per sample
     }

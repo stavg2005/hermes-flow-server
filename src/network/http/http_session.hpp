@@ -49,9 +49,7 @@ class HttpSession : public std::enable_shared_from_this<HttpSession> {
      * This makes Keep-Alive connections extremely memory-efficient.
      */
     std::optional<http::request_parser<http::string_body>> parser_;
-    // Acts as a state machine that consumes raw bytes from the socket stream,
-    // handles HTTP wire-format complexities (like chunked encoding and
-    // header/body separation), and incrementally builds the structured http::request object.
+
 };
 
-}  // namespace server::core
+}  

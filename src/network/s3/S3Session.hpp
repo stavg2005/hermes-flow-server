@@ -27,8 +27,7 @@
  * **Design Philosophy:**
  * 1. **Constant-RAM Streaming:**
  * Unlike naive implementations that load the entire file body into memory
- * (e.g., `http::string_body`), this class streams data in small, fixed-size
- * chunks (512 KB).
+ *  this class streams data in small, fixed-size chunks (512 KB).
  * Data flows Socket -> Fixed Buffer -> Disk, ensuring that memory usage
  * remains O(1) regardless of the file size (preventing OOM on large assets).
  * * 2. **Transactional Safety:** Uses `PartialFileGuard` (RAII) to ensure that
@@ -51,13 +50,12 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
         cfg_ = std::move(bruh.s3);
     }
 
-    /**
-     * @brief Asynchronously requests a file download from S3.
-     *
-     * This function "fires and forgets" the download coroutine.
-     *
-     * @param file_key The object key (path) of the file in the S3 bucket.
-     */
+/**
+ * @brief Downloads a file from S3 to local disk.
+ * @param file_key The S3 object key to download
+ * @throws std::runtime_error if the download fails or file cannot be written
+ * @details Streams the file to disk using RAII guards to prevent partial files.
+ */
     asio::awaitable<void> RequestFile(std::string file_key);
 
    private:
@@ -72,7 +70,7 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
      * @return A signed http::request.
      */
     http::request<http::empty_body> build_download_request(
-        const std::string& file_key) const;  // Marked const
+        const std::string& file_key) const; 
 
     // --- Coroutine Helpers ---
 
@@ -116,12 +114,9 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
      */
     void cleanup_socket();
 
-    void fetch_files();
 
-    // --- Member Variables ---
-    asio::io_context& ioc_;  // Must be declared before members that use it
+    asio::io_context& ioc_;
     S3Config cfg_;
     tcp::resolver resolver_;
     beast::tcp_stream stream_;
-    // Removed: beast::flat_buffer buffer_;
 };

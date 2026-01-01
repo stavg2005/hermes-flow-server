@@ -20,16 +20,16 @@ struct Server::Impl {
     Impl(asio::io_context& io, const std::string& address, const std::string& port, unsigned int num_threads)//NOLINT
         : main_io_(io)
     {
-        // 1. Thread Pool
+
         pool_ = std::make_shared<io_context_pool>(num_threads);
 
-        // 2. Session Management
+
         active_sessions_ = std::make_shared<ActiveSessions>(pool_);
 
-        // 3. Request Routing
+
         router_ = std::make_shared<Router>(active_sessions_, pool_);
 
-        // 4. HTTP Listener
+
         tcp::endpoint endpoint{
             asio::ip::make_address(address),
             static_cast<unsigned short>(std::stoi(port))
@@ -46,9 +46,9 @@ struct Server::Impl {
     }
 
     void Start() {
-        pool_->run();     // Start worker threads
-        listener_->run(); // Start accepting connections
-        main_io_.run();   // Start main thread loop
+        pool_->run();
+        listener_->run();
+        main_io_.run();
     }
 
     void Stop() {

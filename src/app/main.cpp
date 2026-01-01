@@ -47,30 +47,28 @@ static void setup_logging() {
 
 /**
  * @brief Application Entry Point.
- * * **Bootstrap Sequence:**
- * 1. **Logging:** Initialize Spdlog (Console + Rotating File).
- * 2. **Config:** Load `config.toml` (fail fast if missing).
- * 3. **Registry:** Register available Audio Nodes (Mixer, Delay, etc.).
- * 4. **Server:** Initialize the HTTP Server and Thread Pool.
- * 5. **Signals:** Attach SIGINT/SIGTERM handlers for graceful shutdown.
- * 6. **Run:** Block main thread until stop signal received.
+ * 1. Logging: Initialize Spdlog (Console + Rotating File).
+ * 2. Config: Load `config.toml` (fail fast if missing).
+ * 3. Registry: Register available Audio Nodes (Mixer, Delay, etc.).
+ * 4. Server: Initialize the HTTP Server and Thread Pool.
+ * 5. Signals: Attach SIGINT/SIGTERM handlers for graceful shutdown.
+ * 6. Run: Block main thread until stop signal received.
  */
 int main(int argc, char* argv[]) {
     try {
         setup_logging();
 
-        //  1.Load Configuration
+
         AppConfig cfg = LoadConfig("../config.toml");
 
-        // 2. Initialize Node Types
+
         RegisterBuiltinNodes();
 
-        // 3. Server Setup
         asio::io_context main_ioc;
         auto server = std::make_shared<Server>(main_ioc, cfg.server.address,
                                                std::to_string(cfg.server.port), cfg.server.threads);
 
-        // 4. Graceful Shutdown Signal
+        //Graceful Shutdown Signal
         asio::signal_set signals(main_ioc, SIGINT, SIGTERM);
         signals.async_wait([&server](const boost::system::error_code&, int signal_number) {
             spdlog::info("Stop signal ({}) received. Shutting down...", signal_number);
@@ -79,7 +77,7 @@ int main(int argc, char* argv[]) {
 
         spdlog::info("Hermes Flow Server starting on {}:{}", cfg.server.address, cfg.server.port);
 
-        // 5. Run
+
         server->Start();
 
         spdlog::info("Server shutdown complete.");

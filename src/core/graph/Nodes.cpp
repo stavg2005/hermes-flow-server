@@ -6,8 +6,12 @@
 #include <bit>
 #include <cmath>
 
+constexpr int RETRY_DELAY_MS = 50;
+
 #include "WavUtils.hpp"
 
+static constexpr int max_16_bytes = 32767;
+static constexpr int min_16_bytes = -32767;
 // =========================================================
 //  Double_Buffer
 // =========================================================
@@ -75,14 +79,31 @@ void FileInputNode::SetOptions(std::shared_ptr<FileOptionsNode> options_node) {
 }
 
 void FileInputNode::Open() {
+    constexpr int max_retries = 3;
+    int attempt = 0;
     boost::system::error_code ec;
-    file_handle.open(file_path, asio::file_base::read_only, ec);
-    if (!ec && file_handle.is_open()) {
-        total_frames = static_cast<int>(file_handle.size() / FRAME_SIZE_BYTES);
-        spdlog::info("[{}] Opened file. Total frames: {}", file_name, total_frames);
-    } else {
-        spdlog::error("[{}] Exception opening file {}: {}", file_name, file_path, ec.message());
+
+    while (attempt < max_retries) {
+        file_handle.open(file_path, asio::file_base::read_only, ec);
+
+        if (!ec && file_handle.is_open()) {
+            total_frames = static_cast<int>(file_handle.size() / FRAME_SIZE_BYTES);
+            spdlog::info("[{}] Opened file. Total frames: {}", file_name, total_frames);
+            return;
+        }
+
+        spdlog::warn("[{}] Attempt {}: Failed to open file {}: {}", file_name, attempt + 1,
+                     file_path, ec.message());
+        attempt++;
+
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(RETRY_DELAY_MS));
     }
+
+    spdlog::error("[{}] Failed to open file {} after {} attempts.", file_name, file_path,
+                  max_retries);
+
+    total_frames =0; //mark node as inactive
 }
 
 void FileInputNode::Close() {
@@ -112,14 +133,15 @@ void FileInputNode::ProcessFrame(std::span<uint8_t> frame_buffer) {
     auto current_span = bf.GetReadSpan();
     size_t buffer_offset = in_buffer_processed_frames * FRAME_SIZE_BYTES;
 
-    // Handle WAV header on first read
+    // calculate the data offset in the wav file because  some files may not be the standart 44
+    // bytes,for example really short files
     if (is_first_read) {
         offset_size = WavUtils::GetAudioDataOffset(current_span);
         buffer_offset += offset_size;
         is_first_read = false;
     }
 
-    // Check bounds / Swap needed
+    // Check if we need to swap buffers on the next frame
     if (buffer_offset + FRAME_SIZE_BYTES > current_span.size()) {
         if (!bf.back_buffer_ready) {
             std::fill(frame_buffer.begin(), frame_buffer.end(), 0);  // Underrun
@@ -131,7 +153,7 @@ void FileInputNode::ProcessFrame(std::span<uint8_t> frame_buffer) {
         current_span = bf.GetReadSpan();
         buffer_offset = 0;
 
-        // Trigger background refill
+        // co spawning detached to Trigger background refill
         asio::co_spawn(
             file_handle.get_executor(),
             [self = shared_from_this()]() { return self->RequestRefillAsync(); }, asio::detached);
@@ -160,8 +182,8 @@ void FileInputNode::ApplyEffects(std::span<uint8_t> frame_buffer) {
 
     for (size_t i = 0; i < SAMPLES_PER_FRAME; i++) {
         int32_t current_sample = samples[i];
-        int32_t boosted = static_cast<int32_t>(current_sample * gain);
-        samples[i] = static_cast<int16_t>(std::clamp(boosted, -32768, 32767));
+        auto boosted = static_cast<int32_t>(current_sample * gain);
+        samples[i] = static_cast<int16_t>(std::clamp(boosted, min_16_bytes, max_16_bytes));
     }
 }
 
@@ -169,18 +191,34 @@ asio::awaitable<void> FileInputNode::RequestRefillAsync() {
     if (!file_handle.is_open()) co_return;
 
     auto buffer_span = bf.GetWriteSpan();
-    auto [ec, bytes_read] = co_await asio::async_read(file_handle, asio::buffer(buffer_span),
-                                                      asio::as_tuple(asio::use_awaitable));
+    constexpr int max_retries = 3;
+    int attempt = 0;
 
-    if (ec && ec != asio::error::eof) {
-        spdlog::error("[{}] Refill read error: {}", file_name, ec.message());
+    while (attempt < max_retries) {
+        auto [ec, bytes_read] = co_await asio::async_read(file_handle, asio::buffer(buffer_span),
+                                                          asio::as_tuple(asio::use_awaitable));
+
+        if (!ec || ec == asio::error::eof) {
+            if (bytes_read < buffer_span.size()) {
+                std::fill(buffer_span.begin() + bytes_read, buffer_span.end(), 0);
+            }
+            bf.back_buffer_ready = true;
+            co_return;
+        } else {
+            spdlog::warn("[{}] Refill read attempt {} failed: {}", file_name, attempt + 1,
+                         ec.message());
+            attempt++;
+
+            co_await asio::steady_timer(file_handle.get_executor(),
+                                        std::chrono::milliseconds(RETRY_DELAY_MS))
+                .async_wait(asio::use_awaitable);
+        }
     }
 
-    // Zero-fill remaining if EOF
-    if (bytes_read < buffer_span.size()) {
-        std::fill(buffer_span.begin() + bytes_read, buffer_span.end(), 0);
-    }
-
+    // After max retries, fail gracefully
+    spdlog::error("[{}] Refill failed after {} attempts. Filling buffer with zeros.", file_name,
+                  max_retries);
+    std::fill(buffer_span.begin(), buffer_span.end(), 0);
     bf.back_buffer_ready = true;
 }
 
@@ -229,7 +267,8 @@ void MixerNode::ProcessFrame(std::span<uint8_t> frame_buffer) {
 
             audio_source->ProcessFrame(temp_input_buffer_);
 
-            const auto* input_samples = std::bit_cast<const int16_t*>(temp_input_buffer_.data());
+            const auto* input_samples = reinterpret_cast<const int16_t*>(
+                temp_input_buffer_.data());  // NOLINT  reinterpret_cast dosent copy unlike bit_cast
             for (size_t i = 0; i < SAMPLES_PER_FRAME; ++i) {
                 accumulator_[i] += input_samples[i];
             }
@@ -242,19 +281,9 @@ void MixerNode::ProcessFrame(std::span<uint8_t> frame_buffer) {
         std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
         return;
     }
-    /* --------------------------------------------------------------------------
-     * Soft Clipping (Limiter) Logic
-     * --------------------------------------------------------------------------
-     * When mixing multiple audio streams, the sum often exceeds the 16-bit limit
-     * (32,767). Simply chopping off the excess ("Hard Clipping") causes harsh,
-     * unpleasant cracking sounds.
-     *
-     * Solution:
-     * We define a "Safe Zone" (-30,000 to +30,000).
-     * If the signal exceeds this, we apply a hyperbolic tangent (tanh) curve.
-     * This "squashes" the loud peaks smoothly effectively acting as an analog
-     * tube saturation effect, preserving the audio texture while preventing overflow.
-     */
+
+    // Soft limiter: smoothly compress samples outside the safe range to avoid hard clipping.
+    // TODO maybe use a lookup table of tanh instead of calulating tough on 8khz its negligible
     for (size_t i = 0; i < SAMPLES_PER_FRAME; ++i) {
         int32_t raw_sum = accumulator_[i];
         if (raw_sum > CLIP_LIMIT_POSITIVE || raw_sum < CLIP_LIMIT_NEGATIVE) {

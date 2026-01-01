@@ -10,7 +10,7 @@
 namespace server::models {
 
 
-// Define this alias for readability
+
 using res_t = http::response<http::string_body>;
 
 class ResponseBuilder {
@@ -67,7 +67,7 @@ public:
     body_json["bytes_received"] = bytes_received;
     body_json["bytes_processed"] = bytes_processed;
 
-    // Just call the generic helper
+
     make_json_response(res, http::status::ok, body_json, version, keep_alive);
   }
 
@@ -101,7 +101,7 @@ public:
     set_standard_headers(res); // Use new helper
     res.set(http::field::content_type, "application/json");
 
-    // --- USE BOOST::JSON ---
+
     json::object body_json;
     body_json["status"] = "error";
     body_json["message"] = error_message;

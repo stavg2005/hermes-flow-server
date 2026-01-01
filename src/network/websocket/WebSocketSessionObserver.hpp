@@ -11,14 +11,6 @@
  * This class pushes JSON events to the client.
  *
  * **Event: Session Statistics** (Sent every ~100ms)
- * @code
- * {
- * "type": "stats",
- * "node": "node_id_123",  // The ID of the node currently playing
- * "progress": 45.5,       // Percentage of current node completed (0.0-100.0)
- * "bytes": 102400         // Total bytes streamed via RTP so far
- * }
- * @endcode
  */
 class WebSocketSessionObserver : public ISessionObserver {
     std::weak_ptr<WebSocketSession> ws_;
@@ -38,7 +30,7 @@ class WebSocketSessionObserver : public ISessionObserver {
         }
     }
 
-    // Implement other methods...
+    //TODO  implemnt  this functions on a diffrent branch.
     void OnNodeTransition(const std::string& id) override { /* ... */ }
     void OnSessionComplete() override { /* ... */ }
     void OnError(const std::string& error_message) override { /* ... */ }

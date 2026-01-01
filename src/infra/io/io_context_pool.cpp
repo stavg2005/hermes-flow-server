@@ -8,7 +8,6 @@ io_context_pool::io_context_pool(std::size_t pool_size) {
     throw std::runtime_error("io_context_pool size must be > 0");
   }
 
-  // Create io_contexts and work guards
   for (std::size_t i = 0; i < pool_size; ++i) {
     auto ioc = std::make_shared<asio::io_context>();
     io_contexts_.push_back(ioc);
@@ -19,14 +18,14 @@ io_context_pool::io_context_pool(std::size_t pool_size) {
 io_context_pool::~io_context_pool() { stop(); }
 
 void io_context_pool::run() {
-  // Prevent double-run
+
   if (!threads_.empty()) {
     return;
   }
 
   spdlog::info("Starting I/O pool with {} threads.", io_contexts_.size());
 
-  // Create one thread per io_context
+
   for (const auto& ioc : io_contexts_) {
     threads_.emplace_back([ioc]() {
       try {
@@ -39,7 +38,7 @@ void io_context_pool::run() {
 }
 
 void io_context_pool::stop() {
-  work_guards_.clear();  // Allow run() to exit
+  work_guards_.clear();
 
   for (const auto& ioc : io_contexts_) {
     if (ioc && !ioc->stopped()) {

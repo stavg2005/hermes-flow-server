@@ -24,10 +24,7 @@ T require(const json::object& obj, const char* key) {
 
 }  // namespace
 
-// =========================================================
 //  Graph Parser
-// =========================================================
-
 Graph parse_graph(boost::asio::io_context& io, const json::object& o) {
     Graph g{};
 

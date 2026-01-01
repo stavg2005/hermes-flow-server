@@ -25,11 +25,13 @@
 #include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
+#include "BufferPool.hpp"
 #include "PartialFileGuard.hpp"
 #include "S3RequestFactory.hpp"
 #include "spdlog/spdlog.h"
-#include "types.hpp"  // Assuming this contains 'using asio = ...' etc.
+#include "types.hpp"
 
 // ============================================================================
 // Constants & Configuration
@@ -60,11 +62,11 @@ http::request<http::empty_body> S3Session::build_download_request(
 }
 
 asio::awaitable<void> S3Session::connect() {
-    // 1. Resolve DNS (e.g., "s3.amazonaws.com" -> IP)
+
     spdlog::debug("attempting to connect to minio with {} {}", cfg_.host, cfg_.port);
     auto results = co_await resolver_.async_resolve(cfg_.host, cfg_.port, asio::use_awaitable);
 
-    // 2. Connect to the first viable IP address
+
     co_await asio::async_connect(stream_.socket(), results, asio::use_awaitable);
 
     spdlog::debug("Connected to S3: {}:{}", cfg_.host, cfg_.port);
@@ -72,12 +74,11 @@ asio::awaitable<void> S3Session::connect() {
 
 asio::awaitable<std::pair<size_t, beast::flat_buffer>> S3Session::write_request_and_read_headers(
     const std::string& file_key) {
-    // 1. Send Request
     auto req = build_download_request(file_key);
     co_await http::async_write(stream_, req, asio::use_awaitable);
 
-    // 2. Prepare Parser
     beast::flat_buffer header_buffer;
+
     // Use empty_body to read headers without buffering the payload.
     // Using string_body immediately would try to load the entire file (potentially GBs)
     // into RAM, causing an Out-Of-Memory crash. We only switch to string_body
@@ -85,14 +86,12 @@ asio::awaitable<std::pair<size_t, beast::flat_buffer>> S3Session::write_request_
     http::response_parser<http::empty_body> parser;
     parser.body_limit(MAX_BODY_LIMIT);
 
-    // 3. Read Headers
     // This call reads until the "\r\n\r\n" delimiter is found.
     // Any bytes after that delimiter end up in 'header_buffer'.
     co_await http::async_read_header(stream_, header_buffer, parser, asio::use_awaitable);
 
     const auto& response = parser.get();
 
-    // 4. Validate Status Code
     if (response.result() != http::status::ok) {
         // If error, drain the rest of the body to get the error message XML/JSON
         http::response_parser<http::string_body> error_parser(std::move(parser));
@@ -103,7 +102,6 @@ asio::awaitable<std::pair<size_t, beast::flat_buffer>> S3Session::write_request_
         throw std::runtime_error("S3 Error Code: " + std::to_string(response.result_int()));
     }
 
-    // 5. Parse Content-Length
     size_t expected_size = 0;
     if (auto it = response.find(http::field::content_length); it != response.end()) {
         expected_size = std::stoull(std::string(it->value()));
@@ -147,7 +145,6 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
     size_t total_written = 0;
     size_t last_logged_mb = 0;
 
-    // --- Step 1: Flush the "Prefetched" Data ---
     // The 'async_read_header' call might have pulled some body bytes into
     // 'header_buffer'. We MUST write these to the file first.
     if (header_buffer.size() > 0) {
@@ -157,8 +154,10 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
         header_buffer.consume(header_buffer.size());
     }
 
-    // --- Step 2: Stream the Rest ---
-    std::array<uint8_t, DEFAULT_CHUNK_SIZE> buf;
+    // Stream the Rest
+    auto shared_buf = BufferPool::Instance().Acquire(DEFAULT_CHUNK_SIZE);
+
+    std::vector<uint8_t>& buf = *shared_buf;
 
     while (expected_size == 0 || total_written < expected_size) {
         // Cap the read to the exact remaining bytes. Over-reading can corrupt
@@ -171,19 +170,17 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
         if (bytes_to_request == 0) break;
 
         try {
-            // A. Read from Socket
+            // we cant read directly to file from the socket we must use a
+            // middle buffer in the ram
             size_t bytes_read = co_await stream_.async_read_some(
                 asio::buffer(buf.data(), bytes_to_request), asio::use_awaitable);
 
-            // we cant read directly to file from the socket we must use a
-            // middle buffer in the ram
             if (bytes_read == 0) break;  // EOF from server
 
-            // B. Write to Disk
             total_written += co_await asio::async_write(file, asio::buffer(buf, bytes_read),
                                                         asio::use_awaitable);
 
-            // C. Progress Logging
+
             size_t current_mb = total_written / MEGABYTE;
             if (current_mb >= last_logged_mb + PROGRESS_LOG_MB) {
                 spdlog::info("... {} MB downloaded", current_mb);
@@ -199,7 +196,7 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
         }
     }
 
-    // Validation
+
     if (expected_size > 0 && total_written != expected_size) {
         spdlog::warn("Size mismatch: Expected {} bytes, Got {} bytes", expected_size,
                      total_written);
@@ -208,9 +205,6 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
     co_return total_written;
 }
 
-// ============================================================================
-// Main Public API
-// ============================================================================
 
 asio::awaitable<void> S3Session::RequestFile(std::string file_key) {
     try {
@@ -219,25 +213,21 @@ asio::awaitable<void> S3Session::RequestFile(std::string file_key) {
         // Disable timeout for the data phase (large files might take time)
         stream_.expires_never();
 
-        // 1. Establish Connection
         co_await connect();
 
-        // 2. Send Request & Process Headers
-        // 'header_buf' contains any body data that was read along with headers
         auto [expected_size, header_buf] = co_await write_request_and_read_headers(file_key);
 
-        // 3. Prepare Local File
         auto [file, path] = prepare_local_file(file_key);
 
-        // 4. Download Body (RAII Guard protects incomplete files)
-        // If an exception is thrown, 'guard' will delete the partial file.
+        // Download Body (RAII Guard protects incomplete files)
+        //  If an exception is thrown, 'guard' will delete the partial file.
         PartialFileGuard guard(path);
 
         size_t written = co_await stream_body_to_file(file, expected_size, header_buf);
 
-        // 5. Cleanup
+
         file.close();
-        guard.disarm();  // Download successful; do not delete the file.
+        guard.disarm();
 
         spdlog::info("[S3] Download Complete: {}", file_key);
 

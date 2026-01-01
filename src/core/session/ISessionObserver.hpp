@@ -1,7 +1,6 @@
 #pragma once
 #include <string>
 
-// A simple container for snapshot data
 struct SessionStats {
     std::string session_id;
     std::string current_node_id;  // Which node is currently processing?
@@ -20,14 +19,14 @@ struct SessionStats {
  * thread or updating atomic counters) to avoid audio glitches.
  */
 struct ISessionObserver {
-    // 1. Virtual Destructor (Crucial for Interfaces)
+    // Virtual Destructor (Crucial for Interfaces)
     virtual ~ISessionObserver() = default;
 
-    // 2. The Core Update Loop
+    // The Core Update Loop
     //    Called periodically (e.g., every 100ms or every frame)
     virtual void OnStatsUpdate(const SessionStats& stats) = 0;
 
-    // 3. Lifecycle Events
+    // Lifecycle Events
     //    Called when the graph moves to a new node (e.g., "Intro" -> "Chorus")
     virtual void OnNodeTransition(const std::string& node_id) = 0;
 

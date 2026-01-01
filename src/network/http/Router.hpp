@@ -5,7 +5,7 @@
 #include <boost/url/url_view.hpp>
 #include <memory>
 
-#include "ActiveSessions.hpp"  // Fixed Include Path
+#include "ActiveSessions.hpp" 
 #include "WebSocketSessionObserver.hpp"
 #include "io_context_pool.hpp"
 #include "response_builder.hpp"
@@ -35,7 +35,7 @@ class Router {
      * effectively terminates after this call.
      */
     void handle_websocket_request(const req_t& req, res_t& res, boost::beast::tcp_stream& stream);
-    void handle_stop(boost::urls::url_view& url, res_t& res);
+    void handle_stop(const req_t& req, res_t& res);
 
     std::shared_ptr<ActiveSessions> active_;
     std::shared_ptr<io_context_pool> pool_;

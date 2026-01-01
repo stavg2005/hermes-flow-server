@@ -20,7 +20,7 @@
 namespace {
 
 /**
- * @brief Extract a value from a JSON ojsonect, or return a default if missing/null.
+ * @brief Extract a value from a JSON object, or return a default if missing/null.
  */
 template <class T>
 T get_or(const json::object ojson, const char* key, T default_val) {
@@ -33,7 +33,7 @@ T get_or(const json::object ojson, const char* key, T default_val) {
 }
 
 /**
- * @brief Extract a mandatory value from a JSON ojsonect. Throws if missing.
+ * @brief Extract a mandatory value from a JSON object. Throws if missing.
  */
 template <class T>
 T require(const json::object& ojson, const char* key) {
@@ -47,7 +47,7 @@ T require(const json::object& ojson, const char* key) {
 //  Factory Creation Functions
 // =========================================================
 // These functions match the signature required by NodeFactory.
-// They take the IO context and a JSON ojsonect, and return a Node.
+// They take the IO context and a JSON object, and return a Node.
 
 std::shared_ptr<Node> CreateFileInput(boost::asio::io_context& io, const json::object& data) {
     std::string name = require<std::string>(data, "fileName");
@@ -105,7 +105,7 @@ std::shared_ptr<Node> CreateClients(boost::asio::io_context&, const json::object
     return node;
 }
 
-}  // namespace
+}
 
 // =========================================================
 //  Public Registration API

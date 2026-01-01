@@ -7,32 +7,28 @@
 #include "spdlog/spdlog.h"
 
 /**
- * @brief RTP Assembly Adapter.
- * * @details
- * This helper orchestrates the encoding pipeline:
- * 1. **Reserve Header:** Calculates the offset for the payload (skipping 12 bytes).
- * 2. **Encode:** Runs the Codec Strategy (PCM -> A-Law) directly into the target buffer.
- * 3. **Packetize:** Instructs the Packetizer to write the RTP Header *before* the encoded payload.
- * * **Goal:** Ensures we write to the output buffer only once (Zero-Copy assembly).
+ * @brief RTP assembly helper.
+ *
+ * Assembles an RTP packet in a single output buffer:
+ * - Reserves space for the RTP header.
+ * - Encodes PCM directly into the payload region.
+ * - Writes the RTP header in-place before the payload.
+ *
+ * Invariant: output buffer is written once (zero-copy assembly).
  */
 namespace PacketUtils {
 
-static constexpr size_t RTP_HEADER_SIZE = 12;  //
+static constexpr size_t RTP_HEADER_SIZE = 12;
 
-// Generic function handling ANY codec strategy
 inline size_t packet2rtp(std::span<const uint8_t> pcmFrame, RTPPacketizer& packetizer,
-                         ICodecStrategy& codec,  // <--- Dependency Injection
-                         std::span<uint8_t> outBuffer) {
-    // 1. Validate Header Space
+                         ICodecStrategy& codec, std::span<uint8_t> outBuffer) {
     if (outBuffer.size() < RTP_HEADER_SIZE) {
         std::cerr << "[PacketUtils] Buffer too small for header\n";
         return 0;
     }
 
-    // 2. Define Payload Location (Offset by 12 bytes)
     auto payload_buffer = outBuffer.subspan(RTP_HEADER_SIZE);
 
-    // 3. Execute Strategy: Encode directly into the target buffer
     size_t encoded_size = codec.Encode(pcmFrame, payload_buffer);
 
     if (encoded_size == 0) {
@@ -40,13 +36,8 @@ inline size_t packet2rtp(std::span<const uint8_t> pcmFrame, RTPPacketizer& packe
         return 0;
     }
 
-    // 4. Create the correct view of the payload
     auto actual_payload = payload_buffer.first(encoded_size);
 
-    // 5. Let Packetizer write the header
-    // Note: Packetizer will treat 'actual_payload' as data to be "packetized".
-    // Ensure RTPPacketizer::packetize correctly handles payload overlapping
-    // with outBuffer if you want true zero-copy, or accepts it as is.
     return packetizer.packetize(actual_payload, outBuffer);
 }
-}  // namespace PacketUtils
+}  

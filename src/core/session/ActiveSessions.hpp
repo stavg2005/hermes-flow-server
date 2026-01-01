@@ -58,7 +58,12 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
     void create_and_run_WebsocketSession(const std::string& audio_session_id, const req_t& req,
                                          boost::beast::tcp_stream& stream);
 
-    bool remove_session(const std::string& id);
+    enum class RemoveStatus {
+        Success,           // Found and removed both Audio and WebSocket
+        SessionNotFound,   // ID does not exist in Audio map (Critical 404)
+        WebSocketNotFound  // Audio removed, but no WebSocket was attached (Usually 200 OK)
+    };
+    RemoveStatus remove_session(const std::string& id);
 
     // Lookups
     std::shared_ptr<Session> get(const std::string& id) const;

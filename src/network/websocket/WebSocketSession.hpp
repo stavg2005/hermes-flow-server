@@ -19,7 +19,7 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
    public:
     explicit WebSocketSession(tcp::socket&& socket) : ws_(std::move(socket)) {}
 
-    // 1. Accept Connection
+
     template <class Body, class Allocator>
     void do_accept(http::request<Body, http::basic_fields<Allocator>> req) {
         ws_.async_accept(
@@ -29,10 +29,10 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
     void on_accept(beast::error_code ec) {
         if (ec) return spdlog::error("WS Accept failed: {}", ec.message());
         spdlog::info("WS Connected");
-        do_read();  // Start listening
+        do_read();  
     }
 
-    // 2. Read Loop
+
     void do_read() {
         ws_.async_read(buffer_,
                        beast::bind_front_handler(&WebSocketSession::on_read, shared_from_this()));
@@ -49,7 +49,7 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
         buffer_.consume(buffer_.size());
         spdlog::debug("Received WS message: {}", payload);
 
-        do_read();  // Continue loop
+        do_read();
     }
 
     /**
@@ -84,5 +84,22 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
         if (ec) return;
         send_queue_.erase(send_queue_.begin());
         if (!send_queue_.empty()) do_write();
+    }
+
+    /**
+     * @brief Gracefully closes the WebSocket connection.
+     * This triggers the shutdown handshake. The ongoing 'async_read'
+     * will fail with 'operation_aborted' or 'closed', causing the
+     * read loop to exit and the session to destroy itself.
+     */
+    void Close() {
+        // Post the close operation to the socket's strand/executor
+        // to avoid race conditions with ongoing reads/writes.
+        asio::post(ws_.get_executor(), [self = shared_from_this()]() {
+
+            self->ws_.async_close(websocket::close_code::normal, [self](beast::error_code ec) {
+                if (ec) spdlog::debug("WS Close: {}", ec.message());
+            });
+        });
     }
 };

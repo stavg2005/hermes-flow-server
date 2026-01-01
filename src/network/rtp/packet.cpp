@@ -1,9 +1,9 @@
 #include <packet.hpp>
 #include <boost/asio.hpp>
-#include <cstdint>  // for uint8_t, uint16_t, uint32_t, etc.
-#include <optional> // for std::optional
+#include <cstdint>  
+#include <optional>
 #include <random>
-#include <vector> // for std::vector
+#include <vector>
 #ifdef _WIN32
 #include <WinSock2.h>
 #else
