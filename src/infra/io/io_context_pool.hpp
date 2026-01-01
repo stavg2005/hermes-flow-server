@@ -12,14 +12,8 @@
 
 /**
  * @brief Manages a pool of `io_context` instances, each pinning a thread.
- * * @details
- * **Architecture:**
- * - Creates N threads, each running its own `io_context` event loop.
- * - **Load Balancing:** New connections are assigned to contexts via a
- * simple Round-Robin algorithm (`next_io_context_++ % size`).
- * - **Thread Safety:** The assignment is atomic/thread-safe, but the
- * contexts themselves are effectively single-threaded, eliminating
- * the need for mutexes within a specific connection's handler.
+ * Thread pool with one io_context per thread.
+ * Assigns contexts via round-robin.
  */
 class io_context_pool {
    public:

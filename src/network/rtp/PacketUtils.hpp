@@ -7,14 +7,7 @@
 #include "spdlog/spdlog.h"
 
 /**
- * @brief RTP assembly helper.
- *
- * Assembles an RTP packet in a single output buffer:
- * - Reserves space for the RTP header.
- * - Encodes PCM directly into the payload region.
- * - Writes the RTP header in-place before the payload.
- *
- * Invariant: output buffer is written once (zero-copy assembly).
+ * @brief Assembles RTP packets in-place (zero-copy) to avoid allocation.
  */
 namespace PacketUtils {
 
@@ -40,4 +33,4 @@ inline size_t packet2rtp(std::span<const uint8_t> pcmFrame, RTPPacketizer& packe
 
     return packetizer.packetize(actual_payload, outBuffer);
 }
-}  
+}

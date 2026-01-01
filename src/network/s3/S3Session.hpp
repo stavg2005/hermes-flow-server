@@ -23,18 +23,8 @@
 
 /**
  * @brief Manages the download of assets from S3-compatible storage.
- * * @details
- * **Design Philosophy:**
- * 1. **Constant-RAM Streaming:**
- * Unlike naive implementations that load the entire file body into memory
- *  this class streams data in small, fixed-size chunks (512 KB).
- * Data flows Socket -> Fixed Buffer -> Disk, ensuring that memory usage
- * remains O(1) regardless of the file size (preventing OOM on large assets).
- * * 2. **Transactional Safety:** Uses `PartialFileGuard` (RAII) to ensure that
- * if a download is interrupted or fails, the half-written file is
- * automatically deleted, preventing corrupt assets.
- * * 3. **AWS SigV4:** Manually constructs Canonical Requests and Authorization
- * headers to authenticate against MinIO/AWS.
+ *  Streams files from S3 to disk in 512KB chunks to minimize memory usage.
+ *  Uses PartialFileGuard to clean up incomplete downloads on error.
  */
 class S3Session : public std::enable_shared_from_this<S3Session> {
    public:
@@ -70,7 +60,7 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
      * @return A signed http::request.
      */
     http::request<http::empty_body> build_download_request(
-        const std::string& file_key) const; 
+        const std::string& file_key) const;
 
     // --- Coroutine Helpers ---
 

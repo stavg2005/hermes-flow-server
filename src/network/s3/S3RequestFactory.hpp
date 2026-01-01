@@ -20,7 +20,6 @@ std::tm get_safe_gmtime(std::time_t timer) {
     return tm_snapshot;
 }
 
-
 http::request<http::empty_body> create_signed_GET_request(const S3Config& cfg, http::verb method,
                                                           std::string file_key) {
     std::time_t now = std::time(nullptr);
@@ -43,14 +42,11 @@ http::request<http::empty_body> create_signed_GET_request(const S3Config& cfg, h
         canonical_uri = "/" + cfg.bucket + "/" + file_key;
     }
 
-
     aws_sigv4::Signature signer(cfg.service, full_host, cfg.region, cfg.secret_key, cfg.access_key,
                                 now);
 
-    // since its a GET request ,the request dosent have a body so it would be a hash of an empty
-    // string we hardcode it to avoid redundent calculations
+    // Empty SHA-256 hash (for GET requests)
     std::string payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-
 
     // We manually format the date here to ensure consistency with the signer's internal time
     char amzdate[20];
@@ -68,9 +64,7 @@ http::request<http::empty_body> create_signed_GET_request(const S3Config& cfg, h
     std::string signature = signer.createSignature(string_to_sign);
     std::string auth_header = signer.createAuthorizationHeader(signature);
 
-
     http::request<http::empty_body> req{method, canonical_uri, 11};
-
 
     req.set(http::field::host, full_host);
     req.set(http::field::authorization, auth_header);

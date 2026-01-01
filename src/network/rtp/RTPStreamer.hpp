@@ -53,18 +53,14 @@ class RTPStreamer {
             auto addr = net::ip::make_address(ip);
             udp::endpoint ep(addr, port);
 
-            std::erase(clients_, ep); 
+            std::erase(clients_, ep);
             spdlog::info("RTP Client removed: {}:{}", ip, port);
         } catch (...) {
         }
     }
 
-    // Sends a PCM frame to all registered RTP clients.
-    //
-    // Design notes:
-    // - Uses zero-copy fan-out via shared packet buffer.
-    // - Uses callbacks (not coroutines) to allow parallel dispatch and avoid
-    //   per-client coroutine allocations.
+    // Zero-copy fan-out.
+    // Uses callbacks for parallel dispatch (cheaper than coroutines).
     void SendFrame(std::span<const uint8_t> pcm_frame) {
         if (clients_.empty()) return;
 

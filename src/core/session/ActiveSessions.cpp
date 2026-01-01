@@ -4,9 +4,9 @@
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
-#include <boost/uuid/uuid.hpp>             // Core UUID class
-#include <boost/uuid/uuid_generators.hpp>  // Generators (Random, Name-based)
-#include <boost/uuid/uuid_io.hpp>          // Streaming operators (to_string)
+#include <boost/uuid/uuid.hpp>             
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <stdexcept>
 
 #include "Json2Graph.hpp"
@@ -112,7 +112,7 @@ ActiveSessions::RemoveStatus ActiveSessions::remove_session(const std::string& i
         websocket_sessions_.erase(ws_it);
         spdlog::info("[{}] WebSocket session detached and closed.", id);
 
-        return RemoveStatus::Success;  
+        return RemoveStatus::Success;
     }
 
     // Audio was removed, but WS wasn't there.

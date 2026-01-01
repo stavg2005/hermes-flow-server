@@ -7,15 +7,7 @@
 
 /**
  * @brief High-level HTTP Server Facade.
- * * @details
- * **Compilation Firewall (PIMPL Pattern):**
- * This class holds a `unique_ptr` to an internal `Impl` struct defined only
- * in the .cpp file.
- * * **Why?**
- * 1. **Compile Speed:** Changes to Boost.Beast/Asio headers in `Server.cpp`
- * do not force a recompile of `main.cpp` or other files including `Server.hpp`.
- * 2. **ABI Stability:** The memory layout of `Server` does not change even if
- * we add members to the implementation.
+ *    Uses PIMPL for ABI stability
  */
 class Server : public std::enable_shared_from_this<Server> {
    public:

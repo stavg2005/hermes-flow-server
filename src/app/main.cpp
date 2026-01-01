@@ -45,15 +45,7 @@ static void setup_logging() {
     spdlog::flush_on(spdlog::level::debug);
 }
 
-/**
- * @brief Application Entry Point.
- * 1. Logging: Initialize Spdlog (Console + Rotating File).
- * 2. Config: Load `config.toml` (fail fast if missing).
- * 3. Registry: Register available Audio Nodes (Mixer, Delay, etc.).
- * 4. Server: Initialize the HTTP Server and Thread Pool.
- * 5. Signals: Attach SIGINT/SIGTERM handlers for graceful shutdown.
- * 6. Run: Block main thread until stop signal received.
- */
+// Application entry point. Sets up logging, config, and starts the server.
 int main(int argc, char* argv[]) {
     try {
         setup_logging();

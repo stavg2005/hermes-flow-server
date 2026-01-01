@@ -15,12 +15,7 @@
 using NodeCreator = std::shared_ptr<Node> (*)(boost::asio::io_context&, const boost::json::object&);
 
 /**
- * @brief Singleton Factory for instantiating Nodes.
- * * @details
- * Implements the **Factory Method Pattern**. It decouples the JSON parser
- * from the concrete Node classes. The parser only needs to know the string
- * "type" name, and this factory handles the specific constructor logic
- * (which might differ for Mixers vs. Inputs).
+ * @brief Singleton factory to create Node instances from JSON type strings
  */
 class NodeFactory {
    public:

@@ -10,8 +10,6 @@
 
 #include "types.hpp"
 
-
-
 using req_t = http::request<http::string_body>;
 using res_t = http::response<http::string_body>;
 
@@ -23,7 +21,7 @@ struct HttpException : public std::runtime_error {
     HttpException(http::status c, const std::string& msg) : std::runtime_error(msg), code(c) {}
 };
 
-}  
+}  // namespace
 
 Router::Router(std::shared_ptr<ActiveSessions> active, std::shared_ptr<io_context_pool> pool)
     : active_(std::move(active)), pool_(std::move(pool)) {}
@@ -105,8 +103,7 @@ void Router::handle_stop(const req_t& req, res_t& res) {
     switch (status) {
         case Success:
         case WebSocketNotFound:
-            // Both cases are "Success" for the user (the session is stopped).
-            // We can treat WebSocketNotFound as a 200 OK because the goal (stopping) was achieved.
+            // Return 200 OK even if WS missing (idempotent stop).
             ResponseBuilder::build_success_response(res, id, req.version());
             break;
 

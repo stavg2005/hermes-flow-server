@@ -14,15 +14,7 @@ class ServerContext;
 
 /**
  * @brief The TCP Connection Acceptor.
- * * @details
- * **Architecture: One Acceptor, Many Workers**
- * - Runs on the `main_ioc` (Main Thread) to accept incoming TCP connections.
- * - **Load Balancing:** Upon acceptance, it requests a worker `io_context`
- * from the `io_context_pool`.
- * - **Handover:** It moves the connected socket to that worker context
- * (creating an `HttpSession`), ensuring that the heavy lifting (parsing,
- * audio streaming) happens on the worker threads, not the acceptor thread.
- */
+**/
 class listener : public std::enable_shared_from_this<listener> {
    public:
     // Constructor takes io_context and endpoint to bind to

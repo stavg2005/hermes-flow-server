@@ -53,7 +53,7 @@ struct Session::Impl {
     void ConfigureStreamerFromGraph() {
         for (const auto& node : graph_->nodes) {
             if (node->kind == NodeKind::Clients) {
-                // Safe static_cast because we checked kind
+                
                 auto* clientsNode = static_cast<ClientsNode*>(node.get());
 
                 for (const auto& [ip, port] : clientsNode->clients) {

@@ -7,12 +7,6 @@
 
 /**
  * @brief Interface for Audio Encoding Algorithms.
- *  @details
- * To add a new Codec (e.g., Opus):
- * 1. Implement this interface.
- * 2. Return the correct Payload Type (e.g., 111 for Opus dynamic).
- * 3. Update 'GetTimestampIncrement' (Opus 20ms @ 48kHz = 960 ticks).
- * 4. Inject the new strategy into 'RTPStreamer'.
  */
 struct ICodecStrategy {
     virtual ~ICodecStrategy() = default;

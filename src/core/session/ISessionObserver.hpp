@@ -3,20 +3,15 @@
 
 struct SessionStats {
     std::string session_id;
-    std::string current_node_id;  // Which node is currently processing?
-    double progress_percent;      // 0.0 to 100.0
-    size_t total_bytes_sent;      // For network graph
-    int active_inputs;            // How many files are mixing right now
-    double buffer_health;         // Optional: 0.0 (Empty) to 1.0 (Full)
+    std::string current_node_id; 
+    double progress_percent;
+    size_t total_bytes_sent;
+    int active_inputs;
+    double buffer_health;
 };
 
 /**
- * @brief Contract for receiving real-time session updates.
- * * @details
- * **Pattern:** Observer / Listener.
- * **Thread Safety:** These methods are called directly from the Audio Thread.
- * Implementations must be fast and non-blocking (e.g., posting to another
- * thread or updating atomic counters) to avoid audio glitches.
+ * @brief  Session update interface. Called from the audio thread (must be non-blocking)
  */
 struct ISessionObserver {
     // Virtual Destructor (Crucial for Interfaces)

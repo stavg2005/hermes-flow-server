@@ -96,14 +96,13 @@ void FileInputNode::Open() {
                      file_path, ec.message());
         attempt++;
 
-
         std::this_thread::sleep_for(std::chrono::milliseconds(RETRY_DELAY_MS));
     }
 
     spdlog::error("[{}] Failed to open file {} after {} attempts.", file_name, file_path,
                   max_retries);
 
-    total_frames =0; //mark node as inactive
+    total_frames = 0;  // mark node as inactive
 }
 
 void FileInputNode::Close() {
@@ -282,7 +281,7 @@ void MixerNode::ProcessFrame(std::span<uint8_t> frame_buffer) {
         return;
     }
 
-    // Soft limiter: smoothly compress samples outside the safe range to avoid hard clipping.
+    // Soft limiter (tanh) to prevent clipping.
     // TODO maybe use a lookup table of tanh instead of calulating tough on 8khz its negligible
     for (size_t i = 0; i < SAMPLES_PER_FRAME; ++i) {
         int32_t raw_sum = accumulator_[i];

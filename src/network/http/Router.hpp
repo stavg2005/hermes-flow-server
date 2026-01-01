@@ -5,7 +5,7 @@
 #include <boost/url/url_view.hpp>
 #include <memory>
 
-#include "ActiveSessions.hpp" 
+#include "ActiveSessions.hpp"
 #include "WebSocketSessionObserver.hpp"
 #include "io_context_pool.hpp"
 #include "response_builder.hpp"
@@ -26,13 +26,8 @@ class Router {
     void handle_transmit(const req_t& req, res_t& res);
 
     /**
-     * @brief Handles the protocol upgrade from HTTP/1.1 to WebSocket.
-     * * @note **Socket Ownership Transfer:**
-     * Unlike standard HTTP handlers that write a response and close/keep-alive,
-     * this method **steals** the underlying TCP socket (`stream`) from the
-     * `HttpSession`. It passes the socket to a new `WebSocketSession`, which
-     * then manages its own lifetime. The original `HttpSession` coroutine
-     * effectively terminates after this call.
+     * @brief Upgrades to WebSocket. Socket ownership is moved to WebSocketSession
+     *this session will terminate.
      */
     void handle_websocket_request(const req_t& req, res_t& res, boost::beast::tcp_stream& stream);
     void handle_stop(const req_t& req, res_t& res);

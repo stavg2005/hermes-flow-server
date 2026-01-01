@@ -4,15 +4,12 @@
 #include "boost/core/span.hpp"
 
 /**
- * @brief Encapsulates raw audio payload into RFC 3550 RTP packets.
- * * Handles the maintenance of Sequence Numbers and Timestamps, which are critical
- * for the client (receiver) to play audio back at the correct speed and order.
+ * @brief // RFC 3550 RTP packetizer. Manages seq_num and timestamps.
  */
 class RTPPacketizer {
    public:
     /**
      * @param timestampIncrement How many timestamp units to advance per packet.
-     * For 20ms of 8kHz audio, this is typically 160 units.
      */
     RTPPacketizer(uint8_t payload_type, uint32_t ssrc, uint32_t timestampIncrement);
 
@@ -24,7 +21,7 @@ class RTPPacketizer {
     size_t packetize(boost::span<uint8_t> payload, boost::span<uint8_t> outBuffer);
 
     void updateTimestamp();
-  
+
     uint32_t currentTimestamp() const;
 
    private:

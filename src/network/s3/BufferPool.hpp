@@ -8,10 +8,7 @@
 
 
 /**
- * @brief Thread-safe Object Pool for large memory buffers.
- * * Pre-allocates a fixed number of buffers to avoid runtime allocations.
- * * Buffers are wrapped in shared_ptr with a custom deleter to automatically
- *   return them to the pool when done.
+ * @brief Fixed-size memory pool. Returns buffers via custom shared_ptr deleter.
  */
 class BufferPool {
    public:
@@ -24,7 +21,7 @@ class BufferPool {
 
     /**
      * @brief Acquire a buffer from the pool.
-     * * Returns a shared_ptr that automatically returns the buffer on destruction.
+     * Returns a shared_ptr that automatically returns the buffer on destruction.
      * @param size Requested buffer size (ignored if pre-allocated buffers are large enough)
      */
     BufferPtr Acquire(size_t size = 512 * 1024) {

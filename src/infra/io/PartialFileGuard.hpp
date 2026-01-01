@@ -3,9 +3,7 @@
 #include <filesystem>
 #include "spdlog/spdlog.h"
 /**
- * @brief RAII helper to delete a file on exception.
- * This helper class ensures that if the coroutine fails and an exception
- * is thrown, the partially downloaded file is automatically deleted.
+ * @brief RAII guard. Deletes file on destruction unless committed.
  */
 class PartialFileGuard {
    public:

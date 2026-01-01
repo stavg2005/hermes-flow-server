@@ -1,17 +1,18 @@
 #include "NodeRegistry.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <charconv>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <system_error>
-#include <spdlog/spdlog.h>
+
 #include "NodeFactory.hpp"
 #include "Nodes.hpp"
 #include "boost/json/object.hpp"
 #include "types.hpp"
-
 
 // =========================================================
 //  Helpers
@@ -83,7 +84,7 @@ std::shared_ptr<Node> CreateClients(boost::asio::io_context&, const json::object
             const auto& client_ojson = v.as_object();
             std::string ip = require<std::string>(client_ojson, "ip");
 
-            // Handle port as Number (Standard) or String (Legacy/Typo)
+            // Parse port (int or string).
             uint16_t port_val = 0;
             const auto& json_port = client_ojson.at("port");
 
@@ -105,7 +106,7 @@ std::shared_ptr<Node> CreateClients(boost::asio::io_context&, const json::object
     return node;
 }
 
-}
+}  // namespace
 
 // =========================================================
 //  Public Registration API

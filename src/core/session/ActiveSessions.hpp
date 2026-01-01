@@ -16,17 +16,7 @@
 #include "io_context_pool.hpp"
 
 /**
- * @brief The Central Hub for all running Audio Workflows.
- * * @details
- * **Responsibilities:**
- * 1. **Registry:** Maintains a thread-safe map of all active sessions (`sessions_`).
- * 2. **Lifecycle Management:** Creates new sessions from JSON configs and ensures
- * they are destroyed properly when execution finishes.
- * 3. **Protocol Bridging:** Acts as the "Glue" layer that allows an HTTP request
- * (WebSocket Upgrade) to find and attach to a running Audio Graph.
- * * **Thread Safety:**
- * Since sessions can be created (HTTP Thread) and destroyed (Worker Thread)
- * concurrently, all internal maps are protected by a `std::mutex`.
+ * @brief manages session lifecycle and websocket association.
  */
 class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
    public:
@@ -36,24 +26,13 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
 
     /**
      * @brief Factory method to spawn a new Audio Session.
-     * * @details
-     * 1. Generates a unique UUIDv4 for the session.
-     * 2. Parses the JSON payload into an executable `Graph` structure.
-     * 3. Allocates the Session object on the Thread Pool.
-     * * @param jobj The JSON configuration describing the audio graph nodes and edges.
      * @return The unique session ID (string) to be returned to the client.
      */
     std::string create_session(const boost::json::object& jobj);
 
     /**
-     * @brief Upgrades a connection to WebSocket and links it to audio stats.
-     * * @details
-     * This method performs a critical "Handover":
-     * 1. It locates the running `Session` by ID.
-     * 2. It creates a `WebSocketSession` that takes ownership of the TCP socket.
-     * 3. It attaches a `WebSocketSessionObserver` to the audio session, allowing
-     * real-time stats (progress, bytes sent) to flow back to the client.
-     * * @param stream The underlying TCP stream (moved from the HTTP handler).
+     * @brief Upgrades connection to WebSocket and attaches observer to the audio session.
+     * @param stream The underlying TCP stream (moved from the HTTP handler).
      */
     void create_and_run_WebsocketSession(const std::string& audio_session_id, const req_t& req,
                                          boost::beast::tcp_stream& stream);
@@ -79,7 +58,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
     ActiveSessions& operator=(const ActiveSessions&) = delete;
 
    private:
-    // mutable allows locking in const methods (like get/size)
+
     mutable std::mutex mutex_;
 
     std::shared_ptr<io_context_pool> pool_;

@@ -14,7 +14,7 @@ inline size_t GetAudioDataOffset(std::span<const uint8_t> buffer) {
     if (buffer.size() < 44) return 44;  // Too small, assume standard
 
 
-    if (std::memcmp(buffer.data(), "RIFF", 4) != 0) return 0;  
+    if (std::memcmp(buffer.data(), "RIFF", 4) != 0) return 0;
 
     size_t pos = 12;  // Skip RIFF + Size + WAVE
 
@@ -35,7 +35,7 @@ inline size_t GetAudioDataOffset(std::span<const uint8_t> buffer) {
 
         size_t next_pos = pos + 8 + chunk_size;
         if (next_pos > buffer.size() || next_pos < pos) {
-            // "next_pos < pos" checks for integer overflow wrap-around
+            // Check for overflow/malformed size
             spdlog::warn("WavUtils: Malformed chunk size at offset {}", pos);
             return 44;  // Fallback
         }

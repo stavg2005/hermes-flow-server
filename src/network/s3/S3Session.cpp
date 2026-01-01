@@ -1,13 +1,4 @@
-/**
- * @file S3Session.cpp
- * @brief Implementation of the S3 file download session.
- * * This file handles the complete lifecycle of downloading an object from an
- * S3-compatible service:
- * 1. Resolving the host and connecting.
- * 2. Sending a signed HTTP GET request.
- * 3. Parsing headers to validate success and get content length.
- * 4. Streaming the response body directly to a local file on disk.
- */
+
 
 #include "S3Session.hpp"
 
@@ -62,10 +53,8 @@ http::request<http::empty_body> S3Session::build_download_request(
 }
 
 asio::awaitable<void> S3Session::connect() {
-
     spdlog::debug("attempting to connect to minio with {} {}", cfg_.host, cfg_.port);
     auto results = co_await resolver_.async_resolve(cfg_.host, cfg_.port, asio::use_awaitable);
-
 
     co_await asio::async_connect(stream_.socket(), results, asio::use_awaitable);
 
@@ -79,15 +68,10 @@ asio::awaitable<std::pair<size_t, beast::flat_buffer>> S3Session::write_request_
 
     beast::flat_buffer header_buffer;
 
-    // Use empty_body to read headers without buffering the payload.
-    // Using string_body immediately would try to load the entire file (potentially GBs)
-    // into RAM, causing an Out-Of-Memory crash. We only switch to string_body
-    // if a small error message needs to be logged.
+    // Use empty_body to avoid buffering the full file in RAM.
     http::response_parser<http::empty_body> parser;
     parser.body_limit(MAX_BODY_LIMIT);
 
-    // This call reads until the "\r\n\r\n" delimiter is found.
-    // Any bytes after that delimiter end up in 'header_buffer'.
     co_await http::async_read_header(stream_, header_buffer, parser, asio::use_awaitable);
 
     const auto& response = parser.get();
@@ -160,9 +144,7 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
     std::vector<uint8_t>& buf = *shared_buf;
 
     while (expected_size == 0 || total_written < expected_size) {
-        // Cap the read to the exact remaining bytes. Over-reading can corrupt
-        // the next request (Keep-Alive) or cause a hang by waiting for data
-        // that doesn't exist.
+        // Read only remaining bytes to avoid eating into the next request (Keep-Alive).
         size_t remaining =
             (expected_size > 0) ? (expected_size - total_written) : DEFAULT_CHUNK_SIZE;
         size_t bytes_to_request = std::min(DEFAULT_CHUNK_SIZE, remaining);
@@ -180,7 +162,6 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
             total_written += co_await asio::async_write(file, asio::buffer(buf, bytes_read),
                                                         asio::use_awaitable);
 
-
             size_t current_mb = total_written / MEGABYTE;
             if (current_mb >= last_logged_mb + PROGRESS_LOG_MB) {
                 spdlog::info("... {} MB downloaded", current_mb);
@@ -196,7 +177,6 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
         }
     }
 
-
     if (expected_size > 0 && total_written != expected_size) {
         spdlog::warn("Size mismatch: Expected {} bytes, Got {} bytes", expected_size,
                      total_written);
@@ -204,7 +184,6 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
 
     co_return total_written;
 }
-
 
 asio::awaitable<void> S3Session::RequestFile(std::string file_key) {
     try {
@@ -224,7 +203,6 @@ asio::awaitable<void> S3Session::RequestFile(std::string file_key) {
         PartialFileGuard guard(path);
 
         size_t written = co_await stream_body_to_file(file, expected_size, header_buf);
-
 
         file.close();
         guard.disarm();

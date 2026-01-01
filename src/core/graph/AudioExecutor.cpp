@@ -7,7 +7,6 @@
 #include "S3Session.hpp"
 #include "spdlog/spdlog.h"
 
-
 AudioExecutor::AudioExecutor(boost::asio::io_context& io, std::shared_ptr<Graph> graph)
     : io_(io), graph_(std::move(graph)) {
     if (!graph_ || !graph_->start_node) {
@@ -23,13 +22,11 @@ SessionStats& AudioExecutor::get_stats() {
 boost::asio::awaitable<void> AudioExecutor::Prepare() {
     spdlog::info("Preparing Audio Graph...");
 
-
     co_await FetchFiles();
-
 
     UpdateMixers();
 
-    //Reset state
+    // Reset state
     current_node_ = graph_->start_node;
     stats_.current_node_id = current_node_->id;
     stats_.total_bytes_sent = 0;
@@ -44,12 +41,10 @@ boost::asio::awaitable<void> AudioExecutor::FetchFiles() {
 
             if (!std::filesystem::exists(file_node->file_path)) {
                 spdlog::info("File missing: {}. Requesting from S3...", file_node->file_name);
-                // Heap-allocate the session to ensure a stable memory address for async operations
-                // and to keep heavy objects (buffers, sockets) off the stack.
+                // Use shared_ptr to keep session alive during async operation.
                 auto s3_session = std::make_shared<S3Session>(io_);
                 co_await s3_session->RequestFile(file_node->file_name);
             }
-
 
             co_await file_node->InitializeBuffers();
         }
@@ -76,7 +71,6 @@ bool AudioExecutor::GetNextFrame(std::span<uint8_t> output_buffer) {
     if (auto* audio_node = current_node_->AsAudio()) {
         audio_node->ProcessFrame(output_buffer);
 
-
         if (current_node_->processed_frames >= current_node_->total_frames) {
             // Close the current processor to release resources
             audio_node->Close();
@@ -95,6 +89,6 @@ bool AudioExecutor::GetNextFrame(std::span<uint8_t> output_buffer) {
         return (current_node_ != nullptr);
     }
 
-    // Non-audio node encountered 
+    // Non-audio node encountered
     return false;
 }

@@ -29,7 +29,7 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
     void on_accept(beast::error_code ec) {
         if (ec) return spdlog::error("WS Accept failed: {}", ec.message());
         spdlog::info("WS Connected");
-        do_read();  
+        do_read();
     }
 
 
@@ -54,17 +54,8 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
 
     /**
      * @brief Thread-safe, serialized sending mechanism.
-     * * @details
-     * **The Problem:** Boost.Beast allows only one active `async_write` operation
-     * at a time on a socket. Initiating a second write while the first is pending
-     * results in Undefined Behavior (UB).
-     * * **The Solution:** * 1. We post the message to the socket's `strand` (executor) to ensure
-     * thread safety.
-     * 2. We push the message into `send_queue_`.
-     * 3. We trigger `do_write()` *only if* the queue was previously empty (meaning
-     * no write is currently in progress).
-     * 4. When `do_write()` completes, it checks the queue and triggers the next write
-     * recursively, ensuring strict FIFO ordering.
+     * @details
+     *  Boost.Beast is not thread-safe for concurrent writes. Queue outgoing messages
      */
     void Send(std::string message) {
         auto msg_ptr = std::make_shared<std::string>(std::move(message));
@@ -87,10 +78,7 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
     }
 
     /**
-     * @brief Gracefully closes the WebSocket connection.
-     * This triggers the shutdown handshake. The ongoing 'async_read'
-     * will fail with 'operation_aborted' or 'closed', causing the
-     * read loop to exit and the session to destroy itself.
+     * @brief   Initiates close handshake. Causes the read loop to exit.
      */
     void Close() {
         // Post the close operation to the socket's strand/executor

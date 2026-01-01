@@ -22,28 +22,22 @@ enum class NodeKind { FileInput, Mixer, Delay, Clients, FileOptions };
 //  Helpers
 
 /**
- * @brief Thread-safe ping-pong buffer for async file reading.
- *
- * This structure manages two memory blocks:
- * - One is exposed for reading by the Audio Thread.
- * - The other is refilled asynchronously by the IO Thread.
- *
- * @invariant Only swap buffers when 'back_buffer_ready' is true to avoid underruns.
+ * @brief Async double-buffer.
+ 'back_buffer_ready' must be true before swap.
  */
 struct Double_Buffer {
-    /** @brief Path of the file being streamed; used for logging/debugging. */
+\
     std::filesystem::path path;
 
     /**
-     * @brief Flag indicating the background IO operation has completed.
-     * Use memory_order_acquire when reading this flag.
+     * @brief Flag indicating the async refill operation has completed.
      */
     std::atomic<bool> back_buffer_ready{false};
 
     /** @brief Constructor initializes both buffers to BUFFER_SIZE zeros. */
     Double_Buffer();
 
-    // Disable copy/move for safety unless explicitly implemented
+
     Double_Buffer(const Double_Buffer&) = delete;
     Double_Buffer& operator=(const Double_Buffer&) = delete;
 
@@ -69,7 +63,7 @@ struct Double_Buffer {
 
 //  Interfaces
 /**
- * @brief Interface for nodes capable of producing audio frames.
+ * @brief Interface for nodes that can  producing audio frames.
  */
 struct IAudioProcessor {
     /** @brief Process the next audio frame into the provided buffer. */
@@ -82,10 +76,10 @@ struct IAudioProcessor {
 };
 
 /**
- * @brief Interface for nodes that require async initialization.
+ * @brief Interface for nodes that need async initialization.
  */
 struct IAsyncInitializer {
-    /** @brief Initialize internal buffers asynchronously. */
+
     virtual asio::awaitable<void> InitializeBuffers() = 0;
     virtual ~IAsyncInitializer() = default;
 };
@@ -93,9 +87,8 @@ struct IAsyncInitializer {
 //  Base Node
 
 /**
- * @brief Base class for all nodes in the audio graph.
- *
- * Holds execution state and links to the next node (`target`).
+ * @brief Base class for all nodes in the audio graph
+ * Holds execution state and links to the next node.
  */
 struct Node {
     std::string id;
@@ -107,21 +100,19 @@ struct Node {
     int total_frames{0};               /**< Total frames this node will output */
     int in_buffer_processed_frames{0}; /**< Frames processed in the current buffer */
 
-    /** @brief Constructs a node and optionally links to a target. */
+
     explicit Node(Node* t = nullptr);
 
     virtual ~Node() = default;
 
-    /** @brief Returns this node as an audio processor, if applicable. */
+    /** @brief Returns this node as an audio processor, if it is. */
     virtual IAudioProcessor* AsAudio();
 };
 
-
 //  Concrete Nodes
 
-
 /**
- * @brief Holds configuration options for FileInput nodes, e.g., gain adjustment.
+ * @brief Holds configuration options for FileInput nodes like gain adjustment.
  */
 struct FileOptionsNode : Node {
     double gain{1.0}; /**< Gain multiplier applied to audio samples */
@@ -141,10 +132,7 @@ struct FileInputNode : Node,
     std::string file_name;
     std::string file_path;
 
-    /**
-     * @brief Threshold (in frames) to trigger back-buffer refill.
-     * When read pointer passes this threshold, an async refill is dispatched.
-     */
+
     const int refill_threshold_frames;
 
     Double_Buffer bf;
@@ -162,8 +150,6 @@ struct FileInputNode : Node,
 
     /**
      * @brief Fill both buffers of the file input asynchronously.
-     * @details Used at startup to preload buffers. Ensures `back_buffer_ready` is true
-     * before swapping to avoid underruns.
      */
     asio::awaitable<void> InitializeBuffers() override;
 
@@ -177,7 +163,7 @@ struct FileInputNode : Node,
     void Open();
 
     /**
-     * @brief Apply audio effects (e.g., gain) to the current frame buffer.
+     * @brief Apply audio effects  to the current frame buffer.
      * @param frame_buffer Buffer to modify in-place.
      */
     void ApplyEffects(std::span<uint8_t> frame_buffer);
@@ -205,10 +191,10 @@ struct MixerNode : Node, IAudioProcessor {
     void Close() override;
 
     // Specific Methods
-    /** @brief Sets total_frames to the max among inputs. */
+
     void SetMaxFrames();
 
-    /** @brief Add a FileInputNode as an input to the mixer. */
+
     void AddInput(FileInputNode* node);
 };
 
@@ -229,33 +215,18 @@ struct DelayNode : Node, IAudioProcessor {
  * @brief Maintains a list of client endpoints for streaming audio.
  */
 struct ClientsNode : Node {
-    std::unordered_map<std::string, uint16_t> clients; /**< IP -> Port map */
+    std::unordered_map<std::string, uint16_t> clients;
 
     explicit ClientsNode(Node* t = nullptr);
 
-    /** @brief Register a new client to receive audio. */
+
     void AddClient(std::string ip, uint16_t port);
 };
 
-
-
 // Graph
-/**
- * @brief Represents the "AST" of an audio workflow.
- *
- * A Graph is a collection of Nodes linked by `target` pointers.
- *
- * **Structure:**
- * - `nodes`: Ownership container holding shared_ptr to nodes.
- * - `node_map`: Fast lookup (ID -> Node*) for linking edges during parsing.
- * - `start_node`: Entry point for execution (usually a FileInput or Mixer).
- *
- * **Execution Flow:**
- * AudioExecutor starts at `start_node` and follows `target` pointers
- * frame-by-frame.
- */
+// Audio graph container. Holds nodes and the execution entry point.
 struct Graph {
-    std::vector<std::shared_ptr<Node>> nodes; /**< Node ownership container */
-    std::unordered_map<std::string, std::shared_ptr<Node>> node_map; /**< Fast lookup map */
-    Node* start_node = nullptr;                                      /**< Execution entry point */
+    std::vector<std::shared_ptr<Node>> nodes;
+    std::unordered_map<std::string, std::shared_ptr<Node>> node_map;
+    Node* start_node = nullptr;
 };

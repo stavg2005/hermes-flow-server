@@ -26,7 +26,7 @@ void fail(beast::error_code ec, const char* what) {
         spdlog::error("[HttpSession] {} error: {}", what, ec.message());
     }
 }
-}
+}  // namespace
 
 namespace server::core {
 
@@ -134,7 +134,7 @@ asio::awaitable<beast::error_code> HttpSession::do_write_response(
     http::response<http::string_body>& res) {
     res.prepare_payload();
 
-    // Optimization: Disable Nagle's algorithm
+    // Disable Nagle (TCP_NODELAY) for lower latency
     beast::error_code ec;
     stream_.socket().set_option(tcp::no_delay(true), ec);
 
@@ -176,4 +176,4 @@ void HttpSession::do_close() {
     stream_.socket().close(ec);
 }
 
-} 
+}  // namespace server::core
