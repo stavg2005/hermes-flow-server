@@ -1,9 +1,10 @@
 #include "Nodes.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <bit>
 #include <cmath>
-#include <spdlog/spdlog.h>
 
 #include "WavUtils.hpp"
 
@@ -39,7 +40,9 @@ void Double_Buffer::Swap() {
 
 Node::Node(Node* t) : target(t) {}
 
-IAudioProcessor* Node::AsAudio() { return nullptr; }
+IAudioProcessor* Node::AsAudio() {
+    return nullptr;
+}
 
 FileOptionsNode::FileOptionsNode(Node* t) : Node(t) {
     kind = NodeKind::FileOptions;
@@ -60,7 +63,9 @@ FileInputNode::FileInputNode(asio::io_context& io, std::string name, std::string
     offset_size = WAV_HEADER_SIZE;
 }
 
-IAudioProcessor* FileInputNode::AsAudio() { return this; }
+IAudioProcessor* FileInputNode::AsAudio() {
+    return this;
+}
 
 void FileInputNode::SetOptions(std::shared_ptr<FileOptionsNode> options_node) {
     options = std::move(options_node);
@@ -117,7 +122,7 @@ void FileInputNode::ProcessFrame(std::span<uint8_t> frame_buffer) {
     // Check bounds / Swap needed
     if (buffer_offset + FRAME_SIZE_BYTES > current_span.size()) {
         if (!bf.back_buffer_ready) {
-            std::fill(frame_buffer.begin(), frame_buffer.end(), 0); // Underrun
+            std::fill(frame_buffer.begin(), frame_buffer.end(), 0);  // Underrun
             return;
         }
 
@@ -129,8 +134,7 @@ void FileInputNode::ProcessFrame(std::span<uint8_t> frame_buffer) {
         // Trigger background refill
         asio::co_spawn(
             file_handle.get_executor(),
-            [self = shared_from_this()]() { return self->RequestRefillAsync(); },
-            asio::detached);
+            [self = shared_from_this()]() { return self->RequestRefillAsync(); }, asio::detached);
 
     } else if (processed_frames > total_frames) {
         std::ranges::fill(frame_buffer, 0);
@@ -165,14 +169,11 @@ asio::awaitable<void> FileInputNode::RequestRefillAsync() {
     if (!file_handle.is_open()) co_return;
 
     auto buffer_span = bf.GetWriteSpan();
-    auto [ec, bytes_read] = co_await asio::async_read(
-        file_handle,
-        asio::buffer(buffer_span),
-        asio::as_tuple(asio::use_awaitable)
-    );
+    auto [ec, bytes_read] = co_await asio::async_read(file_handle, asio::buffer(buffer_span),
+                                                      asio::as_tuple(asio::use_awaitable));
 
     if (ec && ec != asio::error::eof) {
-         spdlog::error("[{}] Refill read error: {}", file_name, ec.message());
+        spdlog::error("[{}] Refill read error: {}", file_name, ec.message());
     }
 
     // Zero-fill remaining if EOF
@@ -191,7 +192,9 @@ MixerNode::MixerNode(Node* t) : Node(t) {
     kind = NodeKind::Mixer;
 }
 
-IAudioProcessor* MixerNode::AsAudio() { return this; }
+IAudioProcessor* MixerNode::AsAudio() {
+    return this;
+}
 
 void MixerNode::SetMaxFrames() {
     int max = 0;
@@ -208,7 +211,7 @@ void MixerNode::AddInput(FileInputNode* node) {
 
 void MixerNode::Close() {
     for (auto* input : inputs) {
-        if(auto* audio = input->AsAudio()) {
+        if (auto* audio = input->AsAudio()) {
             audio->Close();
         }
     }
@@ -239,8 +242,19 @@ void MixerNode::ProcessFrame(std::span<uint8_t> frame_buffer) {
         std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
         return;
     }
-
-    // Soft Clipping
+    /* --------------------------------------------------------------------------
+     * Soft Clipping (Limiter) Logic
+     * --------------------------------------------------------------------------
+     * When mixing multiple audio streams, the sum often exceeds the 16-bit limit
+     * (32,767). Simply chopping off the excess ("Hard Clipping") causes harsh,
+     * unpleasant cracking sounds.
+     *
+     * Solution:
+     * We define a "Safe Zone" (-30,000 to +30,000).
+     * If the signal exceeds this, we apply a hyperbolic tangent (tanh) curve.
+     * This "squashes" the loud peaks smoothly effectively acting as an analog
+     * tube saturation effect, preserving the audio texture while preventing overflow.
+     */
     for (size_t i = 0; i < SAMPLES_PER_FRAME; ++i) {
         int32_t raw_sum = accumulator_[i];
         if (raw_sum > CLIP_LIMIT_POSITIVE || raw_sum < CLIP_LIMIT_NEGATIVE) {
@@ -262,7 +276,9 @@ void MixerNode::ProcessFrame(std::span<uint8_t> frame_buffer) {
 DelayNode::DelayNode(Node* t) : Node(t) {
     kind = NodeKind::Delay;
 }
-IAudioProcessor* DelayNode::AsAudio() { return this; }
+IAudioProcessor* DelayNode::AsAudio() {
+    return this;
+}
 
 void DelayNode::Close() {
     in_buffer_processed_frames = 0;

@@ -98,9 +98,17 @@ endif()
 
 add_library(hermes_dependencies INTERFACE)
 
-# FIX: Create a dummy 'atomic' library target on Windows.
-# Boost (and others) might try to link 'atomic' when they detect Clang, assuming it's Linux.
-# On Windows, atomic support is built-in, so 'atomic.lib' doesn't exist.
+# -----------------------------------------------------------------------------
+# Platform Hack: Atomic Library Standardization
+# -----------------------------------------------------------------------------
+# Issue:
+# - Linux/Clang often requires explicitly linking '-latomic' for 64-bit atomics.
+# - Windows/MSVC has 64-bit atomics built into the runtime; 'atomic.lib' does not exist.
+#
+# Solution:
+# We create a dummy "atomic" interface target on Windows. This allows the rest
+# of the build script to blindly link against 'atomic' without checking the OS
+# every time.
 if(WIN32 AND NOT TARGET atomic)
     add_library(atomic INTERFACE)
 endif()
@@ -151,7 +159,6 @@ set(SOURCES_NETWORK
     src/network/s3/S3Session.cpp
     src/network/rtp/packet.cpp
     src/network/rtp/RTPPacketizer.cpp
-    src/network/rtp/RTPTransmitter.cpp
     src/network/http/http_session.cpp
     src/network/http/Listener.cpp
     src/network/http/Router.cpp

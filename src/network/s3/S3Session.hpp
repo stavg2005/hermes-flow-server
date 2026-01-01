@@ -21,9 +21,21 @@
 #include "config.hpp"
 #include "types.hpp"
 
-
 /**
- * @brief Manages a single, "one-shot" connection to S3 to download a file.
+ * @brief Manages the download of assets from S3-compatible storage.
+ * * @details
+ * **Design Philosophy:**
+ * 1. **Constant-RAM Streaming:**
+ * Unlike naive implementations that load the entire file body into memory
+ * (e.g., `http::string_body`), this class streams data in small, fixed-size
+ * chunks (512 KB).
+ * Data flows Socket -> Fixed Buffer -> Disk, ensuring that memory usage
+ * remains O(1) regardless of the file size (preventing OOM on large assets).
+ * * 2. **Transactional Safety:** Uses `PartialFileGuard` (RAII) to ensure that
+ * if a download is interrupted or fails, the half-written file is
+ * automatically deleted, preventing corrupt assets.
+ * * 3. **AWS SigV4:** Manually constructs Canonical Requests and Authorization
+ * headers to authenticate against MinIO/AWS.
  */
 class S3Session : public std::enable_shared_from_this<S3Session> {
    public:

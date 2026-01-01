@@ -5,7 +5,21 @@
 #include "ISessionObserver.hpp"
 #include "WebSocketSession.hpp"
 
-
+/**
+ * @brief Bridges the C++ Audio Session with the WebSocket Client.
+ * * @section Protocol Definition
+ * This class pushes JSON events to the client.
+ *
+ * **Event: Session Statistics** (Sent every ~100ms)
+ * @code
+ * {
+ * "type": "stats",
+ * "node": "node_id_123",  // The ID of the node currently playing
+ * "progress": 45.5,       // Percentage of current node completed (0.0-100.0)
+ * "bytes": 102400         // Total bytes streamed via RTP so far
+ * }
+ * @endcode
+ */
 class WebSocketSessionObserver : public ISessionObserver {
     std::weak_ptr<WebSocketSession> ws_;
 

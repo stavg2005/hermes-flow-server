@@ -1,9 +1,20 @@
 #pragma once
 #include <iostream>
 #include <span>
+
 #include "CodecStrategy.hpp"
 #include "RTPPacketizer.hpp"
 #include "spdlog/spdlog.h"
+
+/**
+ * @brief RTP Assembly Adapter.
+ * * @details
+ * This helper orchestrates the encoding pipeline:
+ * 1. **Reserve Header:** Calculates the offset for the payload (skipping 12 bytes).
+ * 2. **Encode:** Runs the Codec Strategy (PCM -> A-Law) directly into the target buffer.
+ * 3. **Packetize:** Instructs the Packetizer to write the RTP Header *before* the encoded payload.
+ * * **Goal:** Ensures we write to the output buffer only once (Zero-Copy assembly).
+ */
 namespace PacketUtils {
 
 static constexpr size_t RTP_HEADER_SIZE = 12;  //

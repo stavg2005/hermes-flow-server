@@ -10,8 +10,6 @@
 #include "spdlog/spdlog.h"
 #include "types.hpp"
 
-
-
 class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
     websocket::stream<beast::tcp_stream> ws_;
     beast::flat_buffer buffer_;
@@ -19,8 +17,7 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
     bool is_initialized_ = false;
 
    public:
-    explicit WebSocketSession(tcp::socket&& socket)
-        : ws_(std::move(socket)) {}
+    explicit WebSocketSession(tcp::socket&& socket) : ws_(std::move(socket)) {}
 
     // 1. Accept Connection
     template <class Body, class Allocator>
@@ -50,14 +47,25 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
 
         // Clear buffer immediately so we are ready for next read
         buffer_.consume(buffer_.size());
-            spdlog::debug("Received WS message: {}", payload);
-
+        spdlog::debug("Received WS message: {}", payload);
 
         do_read();  // Continue loop
     }
 
-
-    // 4. Send Implementation (Inline to avoid linker errors)
+    /**
+     * @brief Thread-safe, serialized sending mechanism.
+     * * @details
+     * **The Problem:** Boost.Beast allows only one active `async_write` operation
+     * at a time on a socket. Initiating a second write while the first is pending
+     * results in Undefined Behavior (UB).
+     * * **The Solution:** * 1. We post the message to the socket's `strand` (executor) to ensure
+     * thread safety.
+     * 2. We push the message into `send_queue_`.
+     * 3. We trigger `do_write()` *only if* the queue was previously empty (meaning
+     * no write is currently in progress).
+     * 4. When `do_write()` completes, it checks the queue and triggers the next write
+     * recursively, ensuring strict FIFO ordering.
+     */
     void Send(std::string message) {
         auto msg_ptr = std::make_shared<std::string>(std::move(message));
         asio::post(ws_.get_executor(), [self = shared_from_this(), msg_ptr]() {

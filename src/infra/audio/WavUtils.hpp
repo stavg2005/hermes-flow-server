@@ -33,7 +33,13 @@ inline size_t GetAudioDataOffset(std::span<const uint8_t> buffer) {
         }
 
         // Skip this chunk
-        pos += 8 + chunk_size;
+        size_t next_pos = pos + 8 + chunk_size;
+        if (next_pos > buffer.size() || next_pos < pos) {
+            // "next_pos < pos" checks for integer overflow wrap-around
+            spdlog::warn("WavUtils: Malformed chunk size at offset {}", pos);
+            return 44;  // Fallback
+        }
+        pos = next_pos;
     }
 
     return 44;  // Fallback

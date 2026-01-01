@@ -77,7 +77,15 @@ Graph parse_graph(boost::asio::io_context& io, const json::object& o) {
         auto source = g.node_map.at(source_id);
         auto target = g.node_map.at(target_id);
 
-        // Special Case: Configuration Edges (e.g., Options -> Input)
+        /* --------------------------------------------------------------------------
+         * Special Edge Handling: Configuration vs. Data Flow
+         * --------------------------------------------------------------------------
+         * Standard edges represent the flow of Audio Data (PCM).
+         * However, 'FileOptions' nodes represent Configuration Data (Gain, Trim, etc.).
+         * * Instead of linking them as an audio source, we "inject" the options node
+         * directly into the target FileInputNode. This allows the FileInputNode to
+         * apply effects (like Gain) internally during its ProcessFrame loop.
+         */
         if (source->kind == NodeKind::FileOptions && target->kind == NodeKind::FileInput) {
             auto opt = std::dynamic_pointer_cast<FileOptionsNode>(source);
             auto inp = std::dynamic_pointer_cast<FileInputNode>(target);

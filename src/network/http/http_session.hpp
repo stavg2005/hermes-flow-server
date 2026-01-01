@@ -39,10 +39,15 @@ class HttpSession : public std::enable_shared_from_this<HttpSession> {
     std::shared_ptr<Router> router_;
     beast::flat_buffer buffer_;
 
-    // We use std::optional to hold the parser.
-    // This allows us to "reset" the parser state by reconstructing it in-place (.emplace())
-    // for each new request, without the overhead of heap allocation (new/delete)
-    // that a std::shared_ptr or std::unique_ptr would incur.
+    /**
+     * @brief HTTP Request Parser.
+     * * @note **Optimization Strategy:**
+     * We wrap the parser in `std::optional` to control its lifetime manually.
+     * Instead of allocating a `new Parser` on the heap for every request
+     * (which causes fragmentation over time), we use `.emplace()` to
+     * reconstruct the parser **in-place** within the existing `HttpSession` memory footprint.
+     * This makes Keep-Alive connections extremely memory-efficient.
+     */
     std::optional<http::request_parser<http::string_body>> parser_;
     // Acts as a state machine that consumes raw bytes from the socket stream,
     // handles HTTP wire-format complexities (like chunked encoding and

@@ -11,6 +11,14 @@ struct SessionStats {
     double buffer_health;         // Optional: 0.0 (Empty) to 1.0 (Full)
 };
 
+/**
+ * @brief Contract for receiving real-time session updates.
+ * * @details
+ * **Pattern:** Observer / Listener.
+ * **Thread Safety:** These methods are called directly from the Audio Thread.
+ * Implementations must be fast and non-blocking (e.g., posting to another
+ * thread or updating atomic counters) to avoid audio glitches.
+ */
 struct ISessionObserver {
     // 1. Virtual Destructor (Crucial for Interfaces)
     virtual ~ISessionObserver() = default;

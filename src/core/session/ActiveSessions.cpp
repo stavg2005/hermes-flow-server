@@ -24,7 +24,7 @@ std::string ActiveSessions::create_session(const boost::json::object& jobj) {
 
     boost::uuids::random_generator generator;
     boost::uuids::uuid uuid = generator();
-    
+
     std::string session_id = boost::uuids::to_string(uuid);
     spdlog::debug("Creating session with ID: {}", session_id);
 
@@ -74,7 +74,18 @@ void ActiveSessions::create_and_run_WebsocketSession(const std::string& audio_se
         websocket_sessions_[audio_session_id] = std::move(websocket);
         spdlog::debug("WebSocketSession {} registered.", audio_session_id);
     }
-    // Launch Session Lifecycle
+
+    /* --------------------------------------------------------------------------
+     * Session Lifecycle & Cleanup
+     * --------------------------------------------------------------------------
+     * We launch the session as a "Detached Coroutine".
+     * * 1. **Keep-Alive**: The lambda captures 'sess' (shared_ptr), ensuring the
+     * Session object remains alive as long as the coroutine is running,
+     * even if 'ActiveSessions' drops its reference.
+     * * 2. **Automatic Cleanup**: When 'sess->start()' returns (due to error
+     * or completion), the coroutine continues to the cleanup block,
+     * removes the ID from the map, and logs the event.
+     */
     asio::co_spawn(
         pool_->get_io_context(),
         [this, self = shared_from_this(), id = audio_session_id,

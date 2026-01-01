@@ -16,6 +16,13 @@ class Session : public std::enable_shared_from_this<Session> {
     Session(boost::asio::io_context& io, std::string id, Graph&& g);
     ~Session();  // Destructor requires Impl to be complete in .cpp
 
+    /**
+     * @brief Initiates the audio graph execution.
+     * * 1. Fetches required files (S3).
+     * 2. Pre-fills audio buffers.
+     * 3. Starts the 20ms ticker loop.
+     * * @return A coroutine that runs until the session ends or is stopped.
+     */
     boost::asio::awaitable<void> start();
     boost::asio::awaitable<void> stop();
 

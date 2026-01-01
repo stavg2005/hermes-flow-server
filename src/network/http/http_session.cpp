@@ -48,60 +48,64 @@ void HttpSession::run() {
 }
 
 asio::awaitable<void> HttpSession::do_session() {
-    for (;;) {
-        // 1. Prepare for new request
+    try {
+        for (;;) {
+            // 1. Prepare for new request
 
-        // Use .emplace() to destruct the old parser and construct a new one in-place.
-        // This is crucial for HTTP Keep-Alive: we reuse the same HttpSession object for
-        // multiple requests, but we need a fresh parser state for each one.
-        // Unlike make_shared, this avoids heap allocation overhead per request.
-        parser_.emplace();
-        stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
+            // Use .emplace() to destruct the old parser and construct a new one in-place.
+            // This is crucial for HTTP Keep-Alive: we reuse the same HttpSession object for
+            // multiple requests, but we need a fresh parser state for each one.
+            // Unlike make_shared, this avoids heap allocation overhead per request.
+            parser_.emplace();
+            stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
 
-        // 2. Read Request
-        auto [ec_read, keep_alive] = co_await do_read_request();
-        if (ec_read) {
-            if (ec_read == http::error::end_of_stream) {
-                co_await do_graceful_close();
-            } else {
-                fail(ec_read, "read");
+            // 2. Read Request
+            auto [ec_read, keep_alive] = co_await do_read_request();
+            if (ec_read) {
+                if (ec_read == http::error::end_of_stream) {
+                    co_await do_graceful_close();
+                } else {
+                    fail(ec_read, "read");
+                }
+                co_return;
             }
-            co_return;
+
+            // requets gets read to parser in the do_read_request function
+            const auto& req = parser_->get();
+
+            // 3. Handle WebSocket Upgrade
+            if (beast::websocket::is_upgrade(req)) {
+                spdlog::info("Upgrading to WebSocket...");
+                http::response<http::string_body> dummy_res;
+
+                // Router moves the socket to WebSocketSession
+                router_->RouteQuery(req, dummy_res, stream_);
+
+                // Session ends here as socket is moved
+                co_return;
+            }
+
+            // 4. Handle Standard HTTP
+            auto res = do_build_response();
+
+            auto ec_write = co_await do_write_response(res);
+            if (ec_write) {
+                fail(ec_write, "write");
+                co_return;
+            }
+
+            if (!keep_alive) {
+                co_await do_graceful_close();
+                co_return;
+            }
+
+            parser_.emplace();
+
+            // Re-apply limits after emplace
+            parser_->body_limit(1024 * 1024 * 10);
         }
-
-        // requets gets read to parser in the do_read_request function
-        const auto& req = parser_->get();
-
-        // 3. Handle WebSocket Upgrade
-        if (beast::websocket::is_upgrade(req)) {
-            spdlog::info("Upgrading to WebSocket...");
-            http::response<http::string_body> dummy_res;
-
-            // Router moves the socket to WebSocketSession
-            router_->RouteQuery(req, dummy_res, stream_);
-
-            // Session ends here as socket is moved
-            co_return;
-        }
-
-        // 4. Handle Standard HTTP
-        auto res = do_build_response();
-
-        auto ec_write = co_await do_write_response(res);
-        if (ec_write) {
-            fail(ec_write, "write");
-            co_return;
-        }
-
-        if (!keep_alive) {
-            co_await do_graceful_close();
-            co_return;
-        }
-
-        parser_.emplace();
-
-        // Re-apply limits after emplace
-        parser_->body_limit(1024 * 1024 * 10);
+    } catch (const std::exception& e) {
+        spdlog::error("Session died: {}", e.what());
     }
 }
 
@@ -183,8 +187,6 @@ asio::awaitable<void> HttpSession::do_graceful_close() {
 bool HttpSession::is_options_request() const {
     return parser_->get().method() == http::verb::options;
 }
-
-
 
 void HttpSession::do_close() {
     beast::error_code ec;

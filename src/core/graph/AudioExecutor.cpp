@@ -7,6 +7,20 @@
 #include "S3Session.hpp"
 #include "spdlog/spdlog.h"
 
+/**
+ * @brief The "Conductor" of the audio processing pipeline.
+ * * @details
+ * Lifecycle:
+ * 1. **Prepare()**: Async phase.
+ * - Scans the graph for `FileInputNode`s.
+ * - Triggers S3 downloads for missing files.
+ * - Pre-fills the initial Double Buffers (reads the first ~40ms of audio).
+ * - *Must complete before the real-time loop starts.*
+ * * 2. **GetNextFrame()**: Real-time phase.
+ * - Called every 20ms by the `Session` timer.
+ * - Pulls data through the graph (Mixer -> Effects -> Output).
+ * - Returns `false` when the graph is exhausted (EOF).
+ */
 AudioExecutor::AudioExecutor(boost::asio::io_context& io, std::shared_ptr<Graph> graph)
     : io_(io), graph_(std::move(graph)) {
     if (!graph_ || !graph_->start_node) {

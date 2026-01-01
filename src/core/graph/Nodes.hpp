@@ -1,37 +1,39 @@
 #pragma once
 
+#include <array>
 #include <atomic>
+#include <boost/asio.hpp>
 #include <filesystem>
 #include <memory>
 #include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <array>
 
-#include <boost/asio.hpp>
 #include "config.hpp"
 #include "types.hpp"
-
 
 // =========================================================
 //  Enums
 // =========================================================
 
-enum class NodeKind {
-    FileInput,
-    Mixer,
-    Delay,
-    Clients,
-    FileOptions
-};
+enum class NodeKind { FileInput, Mixer, Delay, Clients, FileOptions };
 
 // =========================================================
 //  Helpers
 // =========================================================
 
+/**
+ * @brief Thread-safe ping-pong buffer for async file reading.
+ * * This structure manages two memory blocks. One is exposed for reading (Audio Thread),
+ * while the other is refilled asynchronously (IO Thread).
+ * * @invariant Only swaps when 'back_buffer_ready' is true.
+ */
 struct Double_Buffer {
     std::filesystem::path path;
+    /** * @brief Flag indicating the background IO operation has completed.
+     * Use memory_order_acquire when reading this flag.
+     */
     std::atomic<bool> back_buffer_ready{false};
 
     Double_Buffer();
@@ -45,7 +47,7 @@ struct Double_Buffer {
     void set_read_index(int value);
     void Swap();
 
-private:
+   private:
     std::array<std::vector<uint8_t>, 2> blocks_;
     int read_index_ = 0;
 };
@@ -94,13 +96,23 @@ struct FileOptionsNode : Node {
     explicit FileOptionsNode(Node* t = nullptr);
 };
 
+/**
+ * @brief Streams audio from disk using non-blocking I/O.
+ * * Acts as a source node. It maintains a double-buffer system to ensure
+ * the audio processing loop is never blocked by disk I/O latency.
+ */
 struct FileInputNode : Node,
                        IAudioProcessor,
                        IAsyncInitializer,
                        std::enable_shared_from_this<FileInputNode> {
-
     std::string file_name;
     std::string file_path;
+
+    /**
+     * @brief Trigger point for refilling the back buffer.
+     * When the read pointer passes this threshold (e.g., buffer is 50% empty),
+     * an async read request is dispatched to the IO context.
+     */
     const int refill_threshold_frames;
 
     Double_Buffer bf;
@@ -161,7 +173,18 @@ struct ClientsNode : Node {
 // =========================================================
 //  Graph
 // =========================================================
-
+/**
+ * @brief Represents the "Abstract Syntax Tree" (AST) of an Audio Workflow.
+ * * @details
+ * A Graph is a collection of Nodes linked by pointers.
+ * * **Structure:**
+ * - `nodes`: Ownership container. Holds `shared_ptr` to keep nodes alive.
+ * - `node_map`: fast lookup (ID -> Node*) for linking edges during parsing.
+ * - `start_node`: The entry point for execution (usually a FileInput or Mixer).
+ * * **Execution Flow:**
+ * The `AudioExecutor` starts at `start_node` and follows the `target` pointers
+ * to traverse the graph frame-by-frame.
+ */
 struct Graph {
     std::vector<std::shared_ptr<Node>> nodes;
     std::unordered_map<std::string, std::shared_ptr<Node>> node_map;

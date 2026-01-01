@@ -66,36 +66,43 @@ listener::listener(asio::io_context& main_ioc, io_context_pool& pool, const tcp:
 void listener::run() {
     spdlog::debug(("Starting to accept connections.. "));
 
-    //fire and forget corutine and continune listening
+    // fire and forget corutine and continune listening
     asio::co_spawn(
         acceptor_.get_executor(), [this, self = shared_from_this()]() { return do_accept(); },
         asio::detached);
 }
 
 asio::awaitable<void> listener::do_accept() {
-    for (;;) {
-      // get an io_context from the pool for the future sessions socket
-        auto& pool_ioc = pool_.get_io_context();
+    try {
+        for (;;) {
+            // get an io_context from the pool for the future sessions socket
+            auto& pool_ioc = pool_.get_io_context();
 
-        //suspends until a connection attempted  has been detected ,upon aconnection a new socket that is connected to the client would be returned 
-        auto [ec, socket] =
-            co_await acceptor_.async_accept(pool_ioc, asio::as_tuple(asio::use_awaitable));
+            // suspends until a connection attempted  has been detected ,upon aconnection a new
+            // socket that is connected to the client would be returned
+            auto [ec, socket] =
+                co_await acceptor_.async_accept(pool_ioc, asio::as_tuple(asio::use_awaitable));
 
-        if (ec) {
-            if (ec == asio::error::operation_aborted) {
-                break;
+            if (ec) {
+                if (ec == asio::error::operation_aborted) {
+                    break;
+                }
+                fail(ec, "accept");
+                continue;
             }
-            fail(ec, "accept");
-            continue;
+
+            spdlog::debug("New connection accepted ");
+
+            // 4. Create the session.
+            std::make_shared<server::core::HttpSession>(
+                std::move(socket),  // The socket is already on a pool ioc
+                router_             // Pass the router
+                )
+                ->run();
         }
-
-        spdlog::debug("New connection accepted ");
-
-        // 4. Create the session.
-        std::make_shared<server::core::HttpSession>(
-            std::move(socket),  // The socket is already on a pool ioc
-            router_             // Pass the router
-            )
-            ->run();
+    } catch (const std::exception& e) {
+        spdlog::error("[Listener] Uncaught exception: {}", e.what());
+    } catch (...) {
+        spdlog::error("[Listener] Unknown crash exception");
     }
 }
