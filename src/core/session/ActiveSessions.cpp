@@ -45,7 +45,7 @@ std::string ActiveSessions::create_session(const boost::json::object& jobj) {
 void ActiveSessions::create_and_run_WebsocketSession(const std::string& audio_session_id,
                                                      const req_t& req,
                                                      boost::beast::tcp_stream& stream) {
-    spdlog::info("Attaching WebSocket to session {}", audio_session_id);
+
 
     std::shared_ptr<Session> session;
     {

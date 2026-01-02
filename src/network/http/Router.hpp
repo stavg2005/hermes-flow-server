@@ -11,7 +11,7 @@
 #include "response_builder.hpp"
 #include "Types.hpp"
 
-using ResponseBuilder = server::models::ResponseBuilder;
+
 using req_t = http::request<http::string_body>;
 using res_t = http::response<http::string_body>;
 

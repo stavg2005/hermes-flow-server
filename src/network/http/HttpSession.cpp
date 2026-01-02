@@ -119,7 +119,7 @@ http::response<http::string_body> HttpSession::do_build_response() {
     const auto& req = parser_->get();
 
     if (is_options_request()) {
-        server::models::ResponseBuilder::build_options_response(res, req.version(),
+        ResponseBuilder::build_options_response(res, req.version(),
                                                                 req.keep_alive());
     } else {
         res.version(req.version());
@@ -176,4 +176,4 @@ void HttpSession::do_close() {
     stream_.socket().close(ec);
 }
 
-}  
+}

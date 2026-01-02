@@ -26,14 +26,14 @@ class BufferPool {
      */
     BufferPtr Acquire(size_t size = 512 * 1024) {
         std::lock_guard<std::mutex> lock(mutex_);
-        std::vector<uint8_t>* raw_ptr = nullptr;
+        std::unique_ptr<std::vector<uint8_t>> raw_ptr;
 
         if (!pool_.empty()) {
-            raw_ptr = pool_.top();
+            raw_ptr = std::move(pool_.top());
             pool_.pop();
         } else {
             // Rare fallback allocation if all pre-allocated buffers are in use
-            raw_ptr = new std::vector<uint8_t>();
+            raw_ptr = std::make_unique<std::vector<uint8_t>>();
             raw_ptr->reserve(size);
             raw_ptr->resize(size);
         }
@@ -42,22 +42,22 @@ class BufferPool {
             raw_ptr->resize(size);  // cheap if reserve already done
         }
 
-        return BufferPtr(raw_ptr, [this](std::vector<uint8_t>* p) { Release(p); });
+        return BufferPtr(raw_ptr.release(), [this](std::vector<uint8_t>* p) { Release(p); });
     }
 
    private:
     BufferPool(size_t initial_count, size_t buffer_size) {
         for (size_t i = 0; i < initial_count; ++i) {
-            auto* vec = new std::vector<uint8_t>();
+            auto vec = std::make_unique<std::vector<uint8_t>>();
             vec->reserve(buffer_size);
             vec->resize(buffer_size);
-            pool_.push(vec);
+            pool_.push(std::move(vec));
         }
     }
 
     ~BufferPool() {
         while (!pool_.empty()) {
-            delete pool_.top();
+            pool_.pop();
             pool_.pop();
         }
     }
@@ -65,11 +65,11 @@ class BufferPool {
     void Release(std::vector<uint8_t>* p) {
         if (!p) return;
         std::lock_guard<std::mutex> lock(mutex_);
-        pool_.push(p);
+        pool_.push(std::unique_ptr<std::vector<uint8_t>>(p));
     }
 
-    std::stack<std::vector<uint8_t>*> pool_;
+    std::stack<std::unique_ptr<std::vector<uint8_t>>> pool_;
     std::mutex mutex_;
 
-    
+
 };

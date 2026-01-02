@@ -19,7 +19,7 @@
 struct Session::Impl {
     net::io_context& io_;
     std::string id_;
-    std::atomic<bool> is_running_{true};
+    std::atomic<bool> is_running_{false};
     std::shared_ptr<Graph> graph_;
     std::unique_ptr<AudioExecutor> audio_executor_;
     std::unique_ptr<RTPStreamer> streamer_;
@@ -65,7 +65,7 @@ struct Session::Impl {
 
     net::awaitable<void> start() {
         spdlog::info("[{}] Starting session execution...", id_);
-
+        is_running_ = true;
         try {
             co_await audio_executor_->Prepare();
         } catch (const std::exception& e) {
