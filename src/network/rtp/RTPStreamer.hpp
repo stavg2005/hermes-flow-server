@@ -11,13 +11,12 @@
 
 // Core/Infra includes
 #include "CodecStrategy.hpp"
-#include "alaw.hpp"
-#include "config.hpp"
+#include "Config.hpp"
 
 // Local RTP includes
 #include "PacketUtils.hpp"
 #include "RTPPacketizer.hpp"
-#include "packet.hpp"
+#include "Packet.hpp"
 
 namespace net = boost::asio;
 using udp = net::ip::udp;

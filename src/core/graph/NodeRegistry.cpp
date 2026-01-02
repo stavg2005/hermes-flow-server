@@ -12,7 +12,7 @@
 #include "NodeFactory.hpp"
 #include "Nodes.hpp"
 #include "boost/json/object.hpp"
-#include "types.hpp"
+#include "Types.hpp"
 
 // =========================================================
 //  Helpers
@@ -52,7 +52,7 @@ T require(const json::object& ojson, const char* key) {
 
 std::shared_ptr<Node> CreateFileInput(boost::asio::io_context& io, const json::object& data) {
     std::string name = require<std::string>(data, "fileName");
-    // TODO: Make the download path configurable via config.toml
+
     std::string path = "downloads/" + name;
 
     return std::make_shared<FileInputNode>(io, name, path);
@@ -65,8 +65,8 @@ std::shared_ptr<Node> CreateMixer(boost::asio::io_context&, const json::object&)
 std::shared_ptr<Node> CreateDelay(boost::asio::io_context&, const json::object& data) {
     auto node = std::make_shared<DelayNode>();
     // Convert seconds (JSON) to milliseconds (Internal)
-    node->delay_ms = require<float>(data, "delay") * 1000;
-    node->total_frames = static_cast<int>(node->delay_ms / FRAME_DURATION);
+    node->delay_ms_ = require<float>(data, "delay") * 1000;
+    node->total_frames_ = static_cast<int>(node->delay_ms_ / FRAME_DURATION);
     return node;
 }
 
@@ -100,13 +100,13 @@ std::shared_ptr<Node> CreateClients(boost::asio::io_context&, const json::object
                 }
             }
 
-            node->AddClient(ip, port_val);
+            node->add_client(ip, port_val);
         }
     }
     return node;
 }
 
-}  // namespace
+}  
 
 // =========================================================
 //  Public Registration API

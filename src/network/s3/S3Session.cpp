@@ -1,5 +1,3 @@
-
-
 #include "S3Session.hpp"
 
 #include <algorithm>
@@ -22,7 +20,8 @@
 #include "PartialFileGuard.hpp"
 #include "S3RequestFactory.hpp"
 #include "spdlog/spdlog.h"
-#include "types.hpp"
+#include "Types.hpp"
+
 
 // ============================================================================
 // Constants & Configuration
@@ -31,12 +30,10 @@
 static constexpr size_t KILOBYTE = 1024;
 static constexpr size_t MEGABYTE = 1024 * KILOBYTE;
 
-// Buffer size for reading from the socket. 512KB is a good balance for
-// throughput.
+// Buffer size for reading from the socket. 512KB is a good balance for throughput.
 static constexpr size_t DEFAULT_CHUNK_SIZE = 512 * KILOBYTE;
 
-// Max allowable body size (2 GB) to prevent memory exhaustion attacks,
-// though here we stream to disk, so this limit applies to the parser state.
+// Max allowable body size (2 GB) to prevent memory exhaustion attacks.
 static constexpr uint64_t MAX_BODY_LIMIT = 2ULL * 1024 * 1024 * 1024;
 
 // Frequency of progress logging (e.g., every 100 MB)
@@ -49,7 +46,7 @@ static constexpr size_t PROGRESS_LOG_MB = 100;
 http::request<http::empty_body> S3Session::build_download_request(
     const std::string& file_key) const {
     spdlog::debug("service is {}", cfg_.service);
-    return S3RequestFactory::create_signed_GET_request(cfg_, http::verb::get, file_key);
+    return S3RequestFactory::create_signed_get_request(cfg_, http::verb::get, file_key);
 }
 
 asio::awaitable<void> S3Session::connect() {
@@ -129,22 +126,18 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
     size_t total_written = 0;
     size_t last_logged_mb = 0;
 
-    // The 'async_read_header' call might have pulled some body bytes into
-    // 'header_buffer'. We MUST write these to the file first.
+    // Write any body bytes pulled into 'header_buffer' during header read
     if (header_buffer.size() > 0) {
         total_written +=
             co_await asio::async_write(file, header_buffer.data(), asio::use_awaitable);
-        // Mark buffer as consumed so Beast knows we used that data
         header_buffer.consume(header_buffer.size());
     }
 
     // Stream the Rest
     auto shared_buf = BufferPool::Instance().Acquire(DEFAULT_CHUNK_SIZE);
-
     std::vector<uint8_t>& buf = *shared_buf;
 
     while (expected_size == 0 || total_written < expected_size) {
-        // Read only remaining bytes to avoid eating into the next request (Keep-Alive).
         size_t remaining =
             (expected_size > 0) ? (expected_size - total_written) : DEFAULT_CHUNK_SIZE;
         size_t bytes_to_request = std::min(DEFAULT_CHUNK_SIZE, remaining);
@@ -152,12 +145,10 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
         if (bytes_to_request == 0) break;
 
         try {
-            // we cant read directly to file from the socket we must use a
-            // middle buffer in the ram
             size_t bytes_read = co_await stream_.async_read_some(
                 asio::buffer(buf.data(), bytes_to_request), asio::use_awaitable);
 
-            if (bytes_read == 0) break;  // EOF from server
+            if (bytes_read == 0) break;
 
             total_written += co_await asio::async_write(file, asio::buffer(buf, bytes_read),
                                                         asio::use_awaitable);
@@ -170,10 +161,9 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
 
         } catch (const boost::system::system_error& e) {
             if (e.code() == asio::error::eof) {
-                // Clean disconnect (common if Content-Length matches)
                 break;
             }
-            throw;  // Real error
+            throw;
         }
     }
 
@@ -185,11 +175,10 @@ asio::awaitable<size_t> S3Session::stream_body_to_file(asio::stream_file& file,
     co_return total_written;
 }
 
-asio::awaitable<void> S3Session::RequestFile(std::string file_key) {
+asio::awaitable<void> S3Session::request_file(std::string file_key) {
     try {
         spdlog::info("[S3] Initiating request for: {}", file_key);
 
-        // Disable timeout for the data phase (large files might take time)
         stream_.expires_never();
 
         co_await connect();
@@ -198,8 +187,7 @@ asio::awaitable<void> S3Session::RequestFile(std::string file_key) {
 
         auto [file, path] = prepare_local_file(file_key);
 
-        // Download Body (RAII Guard protects incomplete files)
-        //  If an exception is thrown, 'guard' will delete the partial file.
+        // RAII Guard protects incomplete files
         PartialFileGuard guard(path);
 
         size_t written = co_await stream_body_to_file(file, expected_size, header_buf);
@@ -212,10 +200,9 @@ asio::awaitable<void> S3Session::RequestFile(std::string file_key) {
     } catch (const std::exception& e) {
         spdlog::error("[S3] Download Failed for '{}': {}", file_key, e.what());
 
-        // Force close socket on error to ensure clean state
         beast::error_code ec;
         stream_.socket().close(ec);
 
-        throw;  // Propagate error to caller
+        throw;
     }
 }

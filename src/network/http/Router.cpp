@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "types.hpp"
+#include "Types.hpp"
 
 using req_t = http::request<http::string_body>;
 using res_t = http::response<http::string_body>;
@@ -21,9 +21,9 @@ struct HttpException : public std::runtime_error {
     HttpException(http::status c, const std::string& msg) : std::runtime_error(msg), code(c) {}
 };
 
-}  // namespace
+}  
 
-Router::Router(std::shared_ptr<ActiveSessions> active, std::shared_ptr<io_context_pool> pool)
+Router::Router(std::shared_ptr<ActiveSessions> active, std::shared_ptr<IoContextPool> pool)
     : active_(std::move(active)), pool_(std::move(pool)) {}
 
 void Router::RouteQuery(const req_t& req, res_t& res, boost::beast::tcp_stream& stream) {
@@ -134,8 +134,6 @@ void Router::handle_websocket_request(const req_t& req, res_t& res,
     try {
         active_->create_and_run_WebsocketSession(id, req, stream);
     } catch (const std::exception& e) {
-        // Convert internal lookup failure to 404 if possible, otherwise let it bubble as 500
-        throw HttpException(http::status::not_found,
-                            "Session ID not found for WebSocket attachment");
+        throw HttpException(http::status::conflict, e.what());
     }
 }

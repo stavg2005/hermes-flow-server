@@ -1,11 +1,11 @@
-#include "io_context_pool.hpp"
+#include "IoContextPool.hpp"
 #include <stdexcept>
 
 #include "spdlog/spdlog.h"
 
-io_context_pool::io_context_pool(std::size_t pool_size) {
+IoContextPool::IoContextPool(std::size_t pool_size) {
   if (pool_size == 0) {
-    throw std::runtime_error("io_context_pool size must be > 0");
+    throw std::runtime_error("IoContextPool size must be > 0");
   }
 
   for (std::size_t i = 0; i < pool_size; ++i) {
@@ -15,9 +15,9 @@ io_context_pool::io_context_pool(std::size_t pool_size) {
   }
 }
 
-io_context_pool::~io_context_pool() { stop(); }
+IoContextPool::~IoContextPool() { stop(); }
 
-void io_context_pool::run() {
+void IoContextPool::run() {
 
   if (!threads_.empty()) {
     return;
@@ -37,7 +37,7 @@ void io_context_pool::run() {
   }
 }
 
-void io_context_pool::stop() {
+void IoContextPool::stop() {
   work_guards_.clear();
 
   for (const auto& ioc : io_contexts_) {
@@ -47,7 +47,7 @@ void io_context_pool::stop() {
   }
 }
 
-asio::io_context& io_context_pool::get_io_context() {
+asio::io_context& IoContextPool::get_io_context() {
   // Thread safe Round-robin selection
   std::size_t idx = next_io_context_.fetch_add(1, std::memory_order_relaxed) %
                     io_contexts_.size();

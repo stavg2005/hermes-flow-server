@@ -1,4 +1,4 @@
-#include "http_session.hpp"
+#include "HttpSession.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -9,7 +9,7 @@
 #include <memory>
 
 #include "Router.hpp"
-#include "types.hpp"
+#include "Types.hpp"
 
 namespace {
 
@@ -176,4 +176,4 @@ void HttpSession::do_close() {
     stream_.socket().close(ec);
 }
 
-}  // namespace server::core
+}  

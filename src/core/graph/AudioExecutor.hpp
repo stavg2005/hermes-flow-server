@@ -6,9 +6,9 @@
 #include <span>
 #include <vector>
 
-#include "ISessionObserver.hpp"  // For SessionStats
+#include "ISessionObserver.hpp" 
 #include "Nodes.hpp"
-#include "config.hpp"
+#include "Config.hpp"
 
 /**
  * @brief Executes the audio graph. Handles asset loading and the main processing loop

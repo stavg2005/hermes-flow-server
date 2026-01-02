@@ -15,8 +15,8 @@
 // 3. Local Headers
 #include "NodeRegistry.hpp"
 #include "Server.hpp"
-#include "config.hpp"
-#include "types.hpp"
+#include "Config.hpp"
+#include "Types.hpp"
 
 static void setup_logging() {
     std::vector<spdlog::sink_ptr> sinks;
@@ -50,9 +50,7 @@ int main(int argc, char* argv[]) {
     try {
         setup_logging();
 
-
-        AppConfig cfg = LoadConfig("../config.toml");
-
+        AppConfig cfg = load_config("../config.toml");
 
         RegisterBuiltinNodes();
 
@@ -60,7 +58,7 @@ int main(int argc, char* argv[]) {
         auto server = std::make_shared<Server>(main_ioc, cfg.server.address,
                                                std::to_string(cfg.server.port), cfg.server.threads);
 
-        //Graceful Shutdown Signal
+        // Graceful Shutdown Signal
         asio::signal_set signals(main_ioc, SIGINT, SIGTERM);
         signals.async_wait([&server](const boost::system::error_code&, int signal_number) {
             spdlog::info("Stop signal ({}) received. Shutting down...", signal_number);
@@ -68,7 +66,6 @@ int main(int argc, char* argv[]) {
         });
 
         spdlog::info("Hermes Flow Server starting on {}:{}", cfg.server.address, cfg.server.port);
-
 
         server->Start();
 

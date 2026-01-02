@@ -6,7 +6,7 @@
 #include <memory>
 
 #include "Router.hpp"
-#include "types.hpp"
+#include "Types.hpp"
 
 namespace server::core {
 
@@ -43,4 +43,4 @@ class HttpSession : public std::enable_shared_from_this<HttpSession> {
     std::optional<http::request_parser<http::string_body>> parser_;
 };
 
-}  // namespace server::core
+}  

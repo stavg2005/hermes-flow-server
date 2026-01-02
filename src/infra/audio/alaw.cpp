@@ -1,4 +1,4 @@
-#include <alaw.hpp>
+#include <Alaw.hpp>
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -99,7 +99,7 @@ static std::array<uint8_t, VALUE_COUNT_16BIT> make_encode_table() {
 
 static std::array<uint16_t, VALUE_COUNT_U8BIT> make_decode_table() {
   // We're initializing the array with garbage values and populating it later
-  // on. NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,
+  // on.
   // hicpp-member-init)
   std::array<uint16_t, VALUE_COUNT_U8BIT> decode_table{};
 

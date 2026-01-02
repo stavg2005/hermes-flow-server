@@ -1,30 +1,31 @@
+
+//to avoid collision with already exisiting class from boost bruh
 #ifndef IO_CONTEXT_POOL_HPP
 #define IO_CONTEXT_POOL_HPP
 
 #include <boost/asio.hpp>
-#include <cstddef>  // For std::size_t
+#include <cstddef>
 #include <memory>
-#include <thread>  // For std::jthread
+#include <thread>
 #include <vector>
 
-#include "types.hpp"
-
+#include "Types.hpp"
 
 /**
  * @brief Manages a pool of `io_context` instances, each pinning a thread.
  * Thread pool with one io_context per thread.
  * Assigns contexts via round-robin.
  */
-class io_context_pool {
+class IoContextPool {
    public:
-    explicit io_context_pool(std::size_t pool_size);
+    explicit IoContextPool(std::size_t pool_size);
 
     // Destructor. Stops and joins all threads.
-    ~io_context_pool();
+    ~IoContextPool();
 
     // Disable copying
-    io_context_pool(const io_context_pool&) = delete;
-    io_context_pool& operator=(const io_context_pool&) = delete;
+    IoContextPool(const IoContextPool&) = delete;
+    IoContextPool& operator=(const IoContextPool&) = delete;
 
     void run();
 
@@ -44,5 +45,4 @@ class io_context_pool {
 
     std::atomic<std::size_t> next_io_context_{0};
 };
-
 #endif

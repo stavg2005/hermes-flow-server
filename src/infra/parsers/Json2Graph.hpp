@@ -2,8 +2,8 @@
 
 #include <boost/json.hpp>
 
-#include "Nodes.hpp"  // Assumed to contain Graph and Node definitions
-#include "types.hpp"
+#include "Nodes.hpp"  
+#include "Types.hpp"
 
 
 

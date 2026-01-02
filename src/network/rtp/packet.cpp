@@ -1,6 +1,6 @@
-#include <packet.hpp>
+#include <Packet.hpp>
 #include <boost/asio.hpp>
-#include <cstdint>  
+#include <cstdint>
 #include <optional>
 #include <random>
 #include <vector>
@@ -12,12 +12,12 @@
 #endif
 
 [[nodiscard]] uint32_t generate_ssrc() {
-  static std::random_device dev;
-  static std::mt19937_64 rng(dev());
-  static std::uniform_int_distribution<uint32_t> dist(1, 100);
-  const auto ssrc = dist(rng);
+    static std::random_device dev;
+    static thread_local std::mt19937_64 rng(dev());
+    static std::uniform_int_distribution<uint32_t> dist(1, 100);
+    const auto ssrc = dist(rng);
 
-  return ssrc;
+    return ssrc;
 }
 
 static constexpr size_t MINIMUM_HEADER_SIZE = 12;
@@ -35,58 +35,62 @@ RTPPacket& RTPPacket::operator=(RTPPacket&& other) noexcept {
     return *this;
 }
 
-
-RTPPacket::Header::Header(const bool padding, const uint8_t version,
-                          const uint8_t payload_type, const bool marker,
-                          const uint16_t sequence_num, const uint32_t timestamp,
+RTPPacket::Header::Header(const bool padding, const uint8_t version, const uint8_t payload_type,
+                          const bool marker, const uint16_t sequence_num, const uint32_t timestamp,
                           const uint32_t ssrc, std::vector<uint32_t> csrc_list,
                           std::optional<Extension> extension)
-    : padding(padding), version(version), payload_type(payload_type),
-      marker(marker), sequence_num(sequence_num), timestamp(timestamp),
-      ssrc(ssrc), csrc_list(std::move(csrc_list)),
+    : padding(padding),
+      version(version),
+      payload_type(payload_type),
+      marker(marker),
+      sequence_num(sequence_num),
+      timestamp(timestamp),
+      ssrc(ssrc),
+      csrc_list(std::move(csrc_list)),
       extension(std::move(extension)) {}
 
-RTPPacket::Header::Header(RTPPacket::Header &&other) noexcept
-    : padding(other.padding), version(other.version),
-      payload_type(other.payload_type), marker(other.marker),
-      sequence_num(other.sequence_num), timestamp(other.timestamp),
-      ssrc(other.ssrc), csrc_list(std::move(other.csrc_list)),
+RTPPacket::Header::Header(RTPPacket::Header&& other) noexcept
+    : padding(other.padding),
+      version(other.version),
+      payload_type(other.payload_type),
+      marker(other.marker),
+      sequence_num(other.sequence_num),
+      timestamp(other.timestamp),
+      ssrc(other.ssrc),
+      csrc_list(std::move(other.csrc_list)),
       extension(std::move(other.extension)) {}
 
-RTPPacket::Header &
-RTPPacket::Header::operator=(RTPPacket::Header &&other) noexcept {
-  padding = other.padding;
-  version = other.version;
-  payload_type = other.payload_type;
-  marker = other.marker;
-  sequence_num = other.sequence_num;
-  timestamp = other.timestamp;
-  ssrc = other.ssrc;
-  csrc_list = std::move(other.csrc_list);
-  extension = std::move(other.extension);
+RTPPacket::Header& RTPPacket::Header::operator=(RTPPacket::Header&& other) noexcept {
+    padding = other.padding;
+    version = other.version;
+    payload_type = other.payload_type;
+    marker = other.marker;
+    sequence_num = other.sequence_num;
+    timestamp = other.timestamp;
+    ssrc = other.ssrc;
+    csrc_list = std::move(other.csrc_list);
+    extension = std::move(other.extension);
 
-  return *this;
+    return *this;
 }
 
-RTPPacket::Header::Extension::Extension(const uint16_t id,
-                                        std::vector<uint32_t> data)
+RTPPacket::Header::Extension::Extension(const uint16_t id, std::vector<uint32_t> data)
     : id(id), data(std::move(data)) {}
 
-RTPPacket::Header::Extension::Extension(
-    RTPPacket::Header::Extension &&other) noexcept
+RTPPacket::Header::Extension::Extension(RTPPacket::Header::Extension&& other) noexcept
     : id(other.id), data(std::move(other.data)) {}
 
-RTPPacket::Header::Extension &RTPPacket::Header::Extension::operator=(
-    RTPPacket::Header::Extension &&other) noexcept {
-  id = other.id;
-  data = std::move(other.data);
+RTPPacket::Header::Extension& RTPPacket::Header::Extension::operator=(
+    RTPPacket::Header::Extension&& other) noexcept {
+    id = other.id;
+    data = std::move(other.data);
 
-  return *this;
+    return *this;
 }
 
 void RTPPacket::add_ssrc(const uint32_t new_ssrc) {
-  header.csrc_list.push_back(header.ssrc);
-  header.ssrc = new_ssrc;
+    header.csrc_list.push_back(header.ssrc);
+    header.ssrc = new_ssrc;
 }
 
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -100,28 +104,26 @@ void RTPPacket::add_ssrc(const uint32_t new_ssrc) {
 
 #pragma pack(push, 1)
 struct FirstOctet {
-  uint8_t cc : 4;
-  uint8_t extension : 1;
-  uint8_t padding : 1;
-  uint8_t version : 2;
+    uint8_t cc : 4;
+    uint8_t extension : 1;
+    uint8_t padding : 1;
+    uint8_t version : 2;
 };
 
 struct SecondOctet {
-  uint8_t payload_type : 7;
-  uint8_t marker : 1;
+    uint8_t payload_type : 7;
+    uint8_t marker : 1;
 };
 #pragma pack(pop)
 
-
-std::optional<boost::span<uint8_t>>
-RTPPacket::to_buffer(const boost::span<uint8_t>& packet_buffer) const {
+std::optional<boost::span<uint8_t>> RTPPacket::to_buffer(
+    const boost::span<uint8_t>& packet_buffer) const {
     const size_t csrc_list_size = header.csrc_list.size() * sizeof(uint32_t);
-    const size_t extension_size = header.extension
-        ? MINIMUM_EXTENSION_SIZE + header.extension->data.size() * sizeof(uint32_t)
-        : 0;
+    const size_t extension_size =
+        header.extension ? MINIMUM_EXTENSION_SIZE + header.extension->data.size() * sizeof(uint32_t)
+                         : 0;
 
-    size_t buffer_size = MINIMUM_HEADER_SIZE + csrc_list_size +
-                         extension_size + payload.size();
+    size_t buffer_size = MINIMUM_HEADER_SIZE + csrc_list_size + extension_size + payload.size();
 
     if (buffer_size > packet_buffer.size()) {
         return {};
@@ -129,12 +131,8 @@ RTPPacket::to_buffer(const boost::span<uint8_t>& packet_buffer) const {
 
     uint8_t* buf_ptr = packet_buffer.data();
 
-    const FirstOctet first_octet = {
-        static_cast<uint8_t>(header.csrc_list.size()),
-        header.extension.has_value(),
-        header.padding,
-        header.version
-    };
+    const FirstOctet first_octet = {static_cast<uint8_t>(header.csrc_list.size()),
+                                    header.extension.has_value(), header.padding, header.version};
     *reinterpret_cast<FirstOctet*>(buf_ptr) = first_octet;
     buf_ptr += sizeof(first_octet);
 
@@ -160,8 +158,7 @@ RTPPacket::to_buffer(const boost::span<uint8_t>& packet_buffer) const {
         *reinterpret_cast<uint16_t*>(buf_ptr) = htons(header.extension->id);
         buf_ptr += sizeof(header.extension->id);
 
-        uint16_t extension_data_size =
-            static_cast<uint16_t>(header.extension->data.size());
+        uint16_t extension_data_size = static_cast<uint16_t>(header.extension->data.size());
         *reinterpret_cast<uint16_t*>(buf_ptr) = htons(extension_data_size);
         buf_ptr += sizeof(extension_data_size);
 
@@ -179,8 +176,7 @@ RTPPacket::to_buffer(const boost::span<uint8_t>& packet_buffer) const {
 
 // NOLINTEND(altera-struct-pack-align)
 
-std::optional<RTPPacket>
-RTPPacket::from_buffer(const boost::span<uint8_t>& buffer) {
+std::optional<RTPPacket> RTPPacket::from_buffer(const boost::span<uint8_t>& buffer) {
     if (buffer.size() < MINIMUM_HEADER_SIZE) {
         return {};
     }
@@ -224,8 +220,7 @@ RTPPacket::from_buffer(const boost::span<uint8_t>& buffer) {
         uint16_t id = ntohs(*reinterpret_cast<const uint16_t*>(buf_ptr));
         buf_ptr += sizeof(id);
 
-        uint16_t extension_data_size =
-            ntohs(*reinterpret_cast<const uint16_t*>(buf_ptr));
+        uint16_t extension_data_size = ntohs(*reinterpret_cast<const uint16_t*>(buf_ptr));
         buf_ptr += sizeof(extension_data_size);
 
         expected_size += extension_data_size * sizeof(uint32_t);
@@ -241,17 +236,16 @@ RTPPacket::from_buffer(const boost::span<uint8_t>& buffer) {
         extension = Header::Extension(id, std::move(extension_data));
     }
 
-    Header hdr(first_octet->padding, first_octet->version,
-               second_octet->payload_type, second_octet->marker, sequence_num,
-               timestamp, ssrc, std::move(csrc_list), std::move(extension));
+    Header hdr(first_octet->padding, first_octet->version, second_octet->payload_type,
+               second_octet->marker, sequence_num, timestamp, ssrc, std::move(csrc_list),
+               std::move(extension));
 
-    //Instead of allocating vector<uint8_t>, create span
+    // Instead of allocating vector<uint8_t>, create span
     size_t header_bytes = buf_ptr - buffer.data();
     boost::span<const uint8_t> payload_span(buffer.data() + header_bytes,
                                             buffer.size() - header_bytes);
 
     return RTPPacket(std::move(hdr), payload_span);
 }
-
 
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)

@@ -44,4 +44,4 @@ struct AppConfig {
  * @return Parsed AppConfig object.
  * @throws std::runtime_error if file cannot be parsed.
  */
-AppConfig LoadConfig(const std::string& path = "config.toml");
+AppConfig load_config(const std::string& path = "config.toml");

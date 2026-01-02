@@ -5,7 +5,7 @@
 #include "S3Client.hpp"
 #include "awssigv4.h"
 #include "boost/beast/http/empty_body.hpp"
-#include "types.hpp"
+#include "Types.hpp"
 
 namespace S3RequestFactory {
 
@@ -20,7 +20,7 @@ std::tm get_safe_gmtime(std::time_t timer) {
     return tm_snapshot;
 }
 
-http::request<http::empty_body> create_signed_GET_request(const S3Config& cfg, http::verb method,
+http::request<http::empty_body> create_signed_get_request(const S3Config& cfg, http::verb method,
                                                           std::string file_key) {
     std::time_t now = std::time(nullptr);
     std::tm timeinfo = get_safe_gmtime(now);
@@ -73,4 +73,4 @@ http::request<http::empty_body> create_signed_GET_request(const S3Config& cfg, h
 
     return req;
 }
-}  // namespace S3RequestFactory
+}  

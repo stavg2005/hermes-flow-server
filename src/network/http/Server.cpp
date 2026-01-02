@@ -6,22 +6,22 @@
 #include "ActiveSessions.hpp"
 #include "Listener.hpp"
 #include "Router.hpp"
-#include "io_context_pool.hpp"
-#include "types.hpp"
+#include "IoContextPool.hpp"
+#include "Types.hpp"
 struct Server::Impl {
     asio::io_context& main_io_;
 
     // Components
-    std::shared_ptr<io_context_pool> pool_;
+    std::shared_ptr<IoContextPool> pool_;
     std::shared_ptr<ActiveSessions> active_sessions_;
     std::shared_ptr<Router> router_;
-    std::shared_ptr<listener> listener_;
+    std::shared_ptr<Listener> listener_;
 
     Impl(asio::io_context& io, const std::string& address, const std::string& port, unsigned int num_threads)//NOLINT
         : main_io_(io)
     {
 
-        pool_ = std::make_shared<io_context_pool>(num_threads);
+        pool_ = std::make_shared<IoContextPool>(num_threads);
 
 
         active_sessions_ = std::make_shared<ActiveSessions>(pool_);
@@ -35,7 +35,7 @@ struct Server::Impl {
             static_cast<unsigned short>(std::stoi(port))
         };
 
-        listener_ = std::make_shared<listener>(
+        listener_ = std::make_shared<Listener>(
             main_io_,
             *pool_,
             endpoint,

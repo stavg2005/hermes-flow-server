@@ -10,7 +10,7 @@
 
 #include "S3Session.hpp"
 #include "spdlog/spdlog.h"
-#include "types.hpp"
+#include "Types.hpp"
 
 /**
  * @brief Immutable S3 config storage. Acts as a factory for S3Sessions.

@@ -6,8 +6,8 @@
 
 #include "Router.hpp"
 #include "boost/asio/io_context.hpp"
-#include "io_context_pool.hpp"
-#include "types.hpp"
+#include "IoContextPool.hpp"
+#include "Types.hpp"
 
 class ServerContext;
 
@@ -15,10 +15,10 @@ class ServerContext;
 /**
  * @brief The TCP Connection Acceptor.
 **/
-class listener : public std::enable_shared_from_this<listener> {
+class Listener : public std::enable_shared_from_this<Listener> {
    public:
     // Constructor takes io_context and endpoint to bind to
-    listener(asio::io_context& ioc, io_context_pool& pool, const tcp::endpoint& endpoint,
+    Listener(asio::io_context& ioc, IoContextPool& pool, const tcp::endpoint& endpoint,
              const std::shared_ptr<Router>& router);
 
     // Start accepting incoming connections
@@ -32,6 +32,6 @@ class listener : public std::enable_shared_from_this<listener> {
 
     tcp::acceptor acceptor_;
     boost::asio::io_context& main_ioc_;
-    io_context_pool& pool_;
+    IoContextPool& pool_;
     std::shared_ptr<Router> router_;
 };

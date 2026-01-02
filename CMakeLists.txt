@@ -147,19 +147,19 @@ endif()
 
 # Infrastructure
 set(SOURCES_INFRA
-    src/infra/audio/alaw.cpp
-    src/infra/io/io_context_pool.cpp
+    src/infra/audio/Alaw.cpp
+    src/infra/io/IoContextPool.cpp
     src/infra/parsers/Json2Graph.cpp
-    src/core/config/config.cpp
+    src/core/config/Config.cpp
 )
 
 # Network
 set(SOURCES_NETWORK
     src/network/s3/S3Client.cpp
     src/network/s3/S3Session.cpp
-    src/network/rtp/packet.cpp
+    src/network/rtp/Packet.cpp
     src/network/rtp/RTPPacketizer.cpp
-    src/network/http/http_session.cpp
+    src/network/http/HttpSession.cpp
     src/network/http/Listener.cpp
     src/network/http/Router.cpp
     src/network/http/Server.cpp

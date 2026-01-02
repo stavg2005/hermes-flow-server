@@ -8,10 +8,10 @@
 #include <iostream>
 
 #include "Router.hpp"
-#include "http_session.hpp"
-#include "io_context_pool.hpp"
+#include "HttpSession.hpp"
+#include "IoContextPool.hpp"
 #include "spdlog/spdlog.h"
-#include "types.hpp"
+#include "Types.hpp"
 
 static void fail(beast::error_code ec, const char* what) {
     if (ec != beast::errc::not_connected && ec != asio::error::eof &&
@@ -20,7 +20,7 @@ static void fail(beast::error_code ec, const char* what) {
     }
 }
 
-listener::listener(asio::io_context& main_ioc, io_context_pool& pool, const tcp::endpoint& endpoint,
+Listener::Listener(asio::io_context& main_ioc, IoContextPool& pool, const tcp::endpoint& endpoint,
                    const std::shared_ptr<Router>& router)
     : acceptor_(main_ioc), main_ioc_(main_ioc), pool_(pool), router_(router) {
     beast::error_code ec;
@@ -52,7 +52,7 @@ listener::listener(asio::io_context& main_ioc, io_context_pool& pool, const tcp:
                   endpoint.port());
 }
 
-void listener::run() {
+void Listener::run() {
     spdlog::debug(("Starting to accept connections.. "));
 
     asio::co_spawn(
@@ -60,7 +60,7 @@ void listener::run() {
         asio::detached);
 }
 
-asio::awaitable<void> listener::do_accept() {
+asio::awaitable<void> Listener::do_accept() {
     try {
         for (;;) {
             auto& pool_ioc = pool_.get_io_context();

@@ -44,4 +44,4 @@ inline size_t GetAudioDataOffset(std::span<const uint8_t> buffer) {
 
     return 44;  // Fallback
 }
-}  // namespace WavUtils
+} 

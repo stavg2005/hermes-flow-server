@@ -1,15 +1,12 @@
 #pragma once
 
-#include "boost/beast/http/message.hpp" // Use full header
+#include "boost/beast/http/message.hpp"
 #include "boost/beast/http/status.hpp"
 #include "boost/beast/version.hpp"
 #include "boost/json.hpp"
 #include <boost/beast.hpp>
 #include <string>
-#include "types.hpp"
-namespace server::models {
-
-
+#include "Types.hpp"
 
 using res_t = http::response<http::string_body>;
 
@@ -81,7 +78,7 @@ public:
     res.version(version);
     res.keep_alive(keep_alive);
 
-    set_standard_headers(res); // Use new helper
+    set_standard_headers(res);
     res.set(http::field::content_type, "application/json");
 
     res.body() = boost::json::serialize(val);
@@ -98,7 +95,7 @@ public:
     res.keep_alive(keep_alive);
     res.result(status);
 
-    set_standard_headers(res); // Use new helper
+    set_standard_headers(res);
     res.set(http::field::content_type, "application/json");
 
 
@@ -127,4 +124,4 @@ public:
 
 };
 
-} // namespace server::models
+

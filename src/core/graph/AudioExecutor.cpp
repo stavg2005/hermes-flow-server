@@ -28,7 +28,7 @@ boost::asio::awaitable<void> AudioExecutor::Prepare() {
 
     // Reset state
     current_node_ = graph_->start_node;
-    stats_.current_node_id = current_node_->id;
+    stats_.current_node_id = current_node_->id_;
     stats_.total_bytes_sent = 0;
 }
 
@@ -36,26 +36,26 @@ boost::asio::awaitable<void> AudioExecutor::FetchFiles() {
     spdlog::info("Checking file requirements...");
 
     for (const auto& node : graph_->nodes) {
-        if (node->kind == NodeKind::FileInput) {
+        if (node->kind_ == NodeKind::FileInput) {
             auto* file_node = static_cast<FileInputNode*>(node.get());
 
-            if (!std::filesystem::exists(file_node->file_path)) {
-                spdlog::info("File missing: {}. Requesting from S3...", file_node->file_name);
+            if (!std::filesystem::exists(file_node->file_path_)) {
+                spdlog::info("File missing: {}. Requesting from S3...", file_node->file_name_);
                 // Use shared_ptr to keep session alive during async operation.
                 auto s3_session = std::make_shared<S3Session>(io_);
-                co_await s3_session->RequestFile(file_node->file_name);
+                co_await s3_session->request_file(file_node->file_name_);
             }
 
-            co_await file_node->InitializeBuffers();
+            co_await file_node->initialize_buffers();
         }
     }
 }
 
 void AudioExecutor::UpdateMixers() {
     for (const auto& node : graph_->nodes) {
-        if (node->kind == NodeKind::Mixer) {
+        if (node->kind_ == NodeKind::Mixer) {
             if (auto* mixer = dynamic_cast<MixerNode*>(node.get())) {
-                mixer->SetMaxFrames();
+                mixer->set_max_frames();
             }
         }
     }
@@ -67,21 +67,20 @@ bool AudioExecutor::GetNextFrame(std::span<uint8_t> output_buffer) {
     // Zero out buffer (critical for mixing)
     std::fill(output_buffer.begin(), output_buffer.end(), 0);
 
-    // Process current node
-    if (auto* audio_node = current_node_->AsAudio()) {
-        audio_node->ProcessFrame(output_buffer);
+    if (auto* audio_node = current_node_->as_audio()) {
+        audio_node->process_frame(output_buffer);
 
-        if (current_node_->processed_frames >= current_node_->total_frames) {
-            // Close the current processor to release resources
-            audio_node->Close();
+        if (current_node_->processed_frames_ >= current_node_->total_frames_) {
 
-            spdlog::info("Node [{}] finished. Transitions to [{}]", current_node_->id,
-                         current_node_->target ? current_node_->target->id : "END");
+            audio_node->close();
 
-            current_node_ = current_node_->target;
+            spdlog::info("Node [{}] finished. Transitions to [{}]", current_node_->id_,
+                         current_node_->target_ ? current_node_->target_->id_ : "END");
+
+            current_node_ = current_node_->target_;
 
             if (current_node_) {
-                stats_.current_node_id = current_node_->id;
+                stats_.current_node_id = current_node_->id_;
             }
         }
 

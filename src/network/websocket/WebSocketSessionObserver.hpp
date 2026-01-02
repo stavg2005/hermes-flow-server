@@ -22,7 +22,7 @@ class WebSocketSessionObserver : public ISessionObserver {
             j["progress"] = stats.progress_percent;
             j["bytes"] = stats.total_bytes_sent;
 
-            session->Send(boost::json::serialize(j));
+            session->send(boost::json::serialize(j));
         }
     }
 

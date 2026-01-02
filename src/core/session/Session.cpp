@@ -52,8 +52,7 @@ struct Session::Impl {
     // Initialize streamer with clients found in the graph
     void ConfigureStreamerFromGraph() {
         for (const auto& node : graph_->nodes) {
-            if (node->kind == NodeKind::Clients) {
-                
+            if (node->kind_ == NodeKind::Clients) {
                 auto* clientsNode = static_cast<ClientsNode*>(node.get());
 
                 for (const auto& [ip, port] : clientsNode->clients) {
@@ -109,6 +108,8 @@ struct Session::Impl {
             }
         }
     }
+
+    bool get_is_running() const { return is_running_; }
 };
 
 //  Session Wrapper
@@ -123,7 +124,9 @@ net::awaitable<void> Session::start() {
 void Session::stop() {
     return pImpl_->stop();
 }
-
+bool Session::get_is_running() {
+    return pImpl_->get_is_running();
+}
 void Session::AttachObserver(std::shared_ptr<ISessionObserver> observer) {
     pImpl_->AttachObserver(std::move(observer));
 }

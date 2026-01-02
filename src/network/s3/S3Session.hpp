@@ -1,4 +1,3 @@
-
 #pragma once
 #include <filesystem>
 #include <memory>
@@ -18,13 +17,13 @@
 #include <boost/beast/http/empty_body.hpp>
 #include <boost/beast/http/message.hpp>
 
-#include "config.hpp"
-#include "types.hpp"
+#include "Config.hpp"
+#include "Types.hpp"
 
 /**
  * @brief Manages the download of assets from S3-compatible storage.
- *  Streams files from S3 to disk in 512KB chunks to minimize memory usage.
- *  Uses PartialFileGuard to clean up incomplete downloads on error.
+ * Streams files from S3 to disk in 512KB chunks to minimize memory usage.
+ * Uses PartialFileGuard to clean up incomplete downloads on error.
  */
 class S3Session : public std::enable_shared_from_this<S3Session> {
    public:
@@ -34,19 +33,18 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
      * @param ioc The io_context this session's I/O will run on.
      * @param cfg The S3 configuration (defaults to a local MinIO).
      */
-    explicit S3Session(asio::io_context& ioc, const S3Config& cfg = {})
+    explicit S3Session(boost::asio::io_context& ioc, const S3Config& cfg = {})
         : ioc_(ioc), cfg_(cfg), resolver_(ioc), stream_(ioc) {
-        AppConfig bruh = LoadConfig("../config.toml");
-        cfg_ = std::move(bruh.s3);
+        AppConfig config = load_config("../config.toml");
+        cfg_ = std::move(config.s3);
     }
 
-/**
- * @brief Downloads a file from S3 to local disk.
- * @param file_key The S3 object key to download
- * @throws std::runtime_error if the download fails or file cannot be written
- * @details Streams the file to disk using RAII guards to prevent partial files.
- */
-    asio::awaitable<void> RequestFile(std::string file_key);
+    /**
+     * @brief Downloads a file from S3 to local disk.
+     * @param file_key The S3 object key to download
+     * @throws std::runtime_error if the download fails or file cannot be written
+     */
+    asio::awaitable<void> request_file(std::string file_key);
 
    private:
     /**
@@ -59,7 +57,7 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
      * @param file_key The object key to request.
      * @return A signed http::request.
      */
-    http::request<http::empty_body> build_download_request(
+    beast::http::request<beast::http::empty_body> build_download_request(
         const std::string& file_key) const;
 
     // --- Coroutine Helpers ---
@@ -71,42 +69,30 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
 
     /**
      * @brief Writes the HTTP request and reads/parses the HTTP response headers.
-     * @return A pair:
-     * 1. The expected Content-Length of the file.
-     * 2. The header_buffer (which may contain the start of the body).
      */
     asio::awaitable<std::pair<size_t, beast::flat_buffer>> write_request_and_read_headers(
         const std::string& file_key);
 
     /**
      * @brief Creates local directories and opens the destination file for writing.
-     * @param file_key The S3 key, used to determine the local filename.
-     * @return A pair containing the open file handle and its final path.
-     * @throws boost::system::system_error on file or directory I/O error.
      */
     std::pair<asio::stream_file, std::filesystem::path> prepare_local_file(
         const std::string& file_key);
 
     /**
-     * @brief The core streaming loop. Writes leftover data, then reads from
-     * socket.
-     * @param file The open file handle to write to.
-     * @param expected_size The expected file size from headers.
-     * @param header_buffer The buffer from async_read_header (contains file
-     * start).
-     * @return Total number of bytes written to disk.
+     * @brief The core streaming loop.
      */
-    asio::awaitable<size_t> stream_body_to_file(asio::stream_file& file, size_t expected_size,
-                                                beast::flat_buffer& header_buffer);
+    asio::awaitable<size_t> stream_body_to_file(asio::stream_file& file,
+                                                       size_t expected_size,
+                                                       beast::flat_buffer& header_buffer);
 
     /**
      * @brief Performs a graceful shutdown and close of the socket.
      */
     void cleanup_socket();
 
-
     asio::io_context& ioc_;
     S3Config cfg_;
-    tcp::resolver resolver_;
+    asio::ip::tcp::resolver resolver_;
     beast::tcp_stream stream_;
 };

@@ -5,15 +5,19 @@
 #include <boost/beast/core/tcp_stream.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/json.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "IoContextPool.hpp"
 #include "Session.hpp"
 #include "WebSocketSession.hpp"
-#include "io_context_pool.hpp"
+
 
 /**
  * @brief manages session lifecycle and websocket association.
@@ -22,7 +26,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
    public:
     using req_t = http::request<http::string_body>;
 
-    explicit ActiveSessions(std::shared_ptr<io_context_pool> pool);
+    explicit ActiveSessions(std::shared_ptr<IoContextPool> pool);
 
     /**
      * @brief Factory method to spawn a new Audio Session.
@@ -38,9 +42,9 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
                                          boost::beast::tcp_stream& stream);
 
     enum class RemoveStatus {
-        Success,           // Found and removed both Audio and WebSocket
-        SessionNotFound,   // ID does not exist in Audio map (Critical 404)
-        WebSocketNotFound  // Audio removed, but no WebSocket was attached (Usually 200 OK)
+        Success,          
+        SessionNotFound,
+        WebSocketNotFound
     };
     RemoveStatus remove_session(const std::string& id);
 
@@ -58,11 +62,11 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
     ActiveSessions& operator=(const ActiveSessions&) = delete;
 
    private:
-
     mutable std::mutex mutex_;
 
-    std::shared_ptr<io_context_pool> pool_;
+    std::shared_ptr<IoContextPool> pool_;
     std::atomic<int64_t> next_session_id_{0};
+    boost::uuids::random_generator generator_;
 
     // Maps
     std::unordered_map<std::string, std::shared_ptr<Session>> sessions_;

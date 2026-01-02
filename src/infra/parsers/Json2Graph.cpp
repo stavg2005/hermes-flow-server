@@ -22,7 +22,7 @@ T require(const json::object& obj, const char* key) {
     }
 }
 
-}  // namespace
+}  
 
 //  Graph Parser
 Graph parse_graph(boost::asio::io_context& io, const json::object& o) {
@@ -42,7 +42,7 @@ Graph parse_graph(boost::asio::io_context& io, const json::object& o) {
 
         // Factory creates the specific Node subclass
         auto new_node = NodeFactory::Instance().Create(type, io, data);
-        new_node->id = id;
+        new_node->id_ = id;
 
         g.node_map[id] = new_node;
         g.nodes.push_back(std::move(new_node));
@@ -76,20 +76,20 @@ Graph parse_graph(boost::asio::io_context& io, const json::object& o) {
 
         // Special case: Options nodes are not audio sources.
         // Inject them directly into the target InputNode instead of linking.
-        if (source->kind == NodeKind::FileOptions && target->kind == NodeKind::FileInput) {
+        if (source->kind_ == NodeKind::FileOptions && target->kind_ == NodeKind::FileInput) {
             auto opt = std::dynamic_pointer_cast<FileOptionsNode>(source);
             auto inp = std::dynamic_pointer_cast<FileInputNode>(target);
-            if (opt && inp) inp->SetOptions(opt);
+            if (opt && inp) inp->set_options(opt);
         }
         // Standard Audio Flow Edges
         else {
-            source->target = target.get();
+            source->target_ = target.get();
 
             // If target is a Mixer, register the input
-            if (target->kind == NodeKind::Mixer && source->kind == NodeKind::FileInput) {
+            if (target->kind_ == NodeKind::Mixer && source->kind_ == NodeKind::FileInput) {
                 auto mixer = std::dynamic_pointer_cast<MixerNode>(target);
                 auto input = std::dynamic_pointer_cast<FileInputNode>(source);
-                if (mixer && input) mixer->AddInput(input.get());
+                if (mixer && input) mixer->add_input(input.get());
             }
         }
     }

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <span>
 
-#include "alaw.hpp"
+#include "Alaw.hpp"
 
 /**
  * @brief Interface for Audio Encoding Algorithms.
@@ -25,7 +25,7 @@ struct ICodecStrategy {
     virtual uint32_t GetTimestampIncrement(size_t pcm_byte_size) const = 0;
 };
 
-// 2. Concrete A-Law Strategy
+
 struct ALawCodecStrategy : ICodecStrategy {
     size_t Encode(std::span<const uint8_t> pcm, std::span<uint8_t> out_buffer) override {
         const size_t sample_count = pcm.size() / sizeof(int16_t);

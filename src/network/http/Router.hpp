@@ -7,9 +7,9 @@
 
 #include "ActiveSessions.hpp"
 #include "WebSocketSessionObserver.hpp"
-#include "io_context_pool.hpp"
+#include "IoContextPool.hpp"
 #include "response_builder.hpp"
-#include "types.hpp"
+#include "Types.hpp"
 
 using ResponseBuilder = server::models::ResponseBuilder;
 using req_t = http::request<http::string_body>;
@@ -17,7 +17,7 @@ using res_t = http::response<http::string_body>;
 
 class Router {
    public:
-    explicit Router(std::shared_ptr<ActiveSessions> active, std::shared_ptr<io_context_pool> pool);
+    explicit Router(std::shared_ptr<ActiveSessions> active, std::shared_ptr<IoContextPool> pool);
 
     void RouteQuery(const req_t& req, res_t& res, boost::beast::tcp_stream& stream);
 
@@ -33,5 +33,5 @@ class Router {
     void handle_stop(const req_t& req, res_t& res);
 
     std::shared_ptr<ActiveSessions> active_;
-    std::shared_ptr<io_context_pool> pool_;
+    std::shared_ptr<IoContextPool> pool_;
 };

@@ -7,7 +7,7 @@
 
 #include "ISessionObserver.hpp"
 
-// Forward declarations
+
 class Graph;
 
 class Session : public std::enable_shared_from_this<Session> {
@@ -25,7 +25,7 @@ class Session : public std::enable_shared_from_this<Session> {
 
     void AddClient(std::string& ip, uint16_t port);
     void AttachObserver(std::shared_ptr<ISessionObserver> observer);
-
+    bool get_is_running();
    private:
     struct Impl;
     std::unique_ptr<Impl> pImpl_;
