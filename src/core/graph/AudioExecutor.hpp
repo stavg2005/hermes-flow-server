@@ -6,7 +6,7 @@
 #include <span>
 #include <vector>
 
-#include "ISessionObserver.hpp" 
+#include "ISessionObserver.hpp"
 #include "Nodes.hpp"
 #include "Config.hpp"
 
@@ -39,7 +39,7 @@ class AudioExecutor {
      * @param output_buffer buffer for the mixed PCM audio.
      * @return true if a frame was produced, false if the graph is over .
      */
-    bool GetNextFrame(std::span<uint8_t> output_buffer);
+    std::pair<bool, NodeError> GetNextFrame(std::span<uint8_t> output_buffer);
 
    private:
     /**

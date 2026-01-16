@@ -5,8 +5,10 @@
 #include <memory>
 #include <string>
 
+#include "AudioExecutor.hpp"
 #include "ISessionObserver.hpp"
-
+#include "RTPStreamer.hpp"
+#include "Types.hpp"
 
 class Graph;
 
@@ -23,10 +25,19 @@ class Session : public std::enable_shared_from_this<Session> {
     boost::asio::awaitable<void> start();
     void stop();
 
-    void AddClient(std::string& ip, uint16_t port);
+    void AddClient(const std::string& ip, uint16_t port);
     void AttachObserver(std::shared_ptr<ISessionObserver> observer);
-    bool get_is_running();
+    bool get_is_running() const;
+    void ConfigureStreamerFromGraph();
+
    private:
-    struct Impl;
-    std::unique_ptr<Impl> pImpl_;
+    net::io_context& io_;
+    std::string id_;
+    std::atomic<bool> is_running_{false};
+    std::shared_ptr<Graph> graph_;
+    std::unique_ptr<AudioExecutor> audio_executor_;
+    std::unique_ptr<RTPStreamer> streamer_;
+
+    net::steady_timer timer_;
+    std::shared_ptr<ISessionObserver> observer_;
 };

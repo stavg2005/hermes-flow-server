@@ -1,9 +1,11 @@
 #include "AudioExecutor.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <filesystem>
 #include <stdexcept>
 
+#include "Nodes.hpp"
 #include "S3Session.hpp"
 #include "spdlog/spdlog.h"
 
@@ -61,33 +63,55 @@ void AudioExecutor::UpdateMixers() {
     }
 }
 
-bool AudioExecutor::GetNextFrame(std::span<uint8_t> output_buffer) {
-    if (!current_node_) return false;
+std::pair<bool, NodeError> AudioExecutor::GetNextFrame(std::span<uint8_t> output_buffer) {
+    if (!current_node_) return {false, NodeError::Success};
 
-    // Zero out buffer (critical for mixing)
+    // איפוס הבאפר (קריטי למיקסר)
     std::fill(output_buffer.begin(), output_buffer.end(), 0);
 
     if (auto* audio_node = current_node_->as_audio()) {
-        audio_node->process_frame(output_buffer);
+        auto result = audio_node->process_frame(output_buffer);
 
-        if (current_node_->processed_frames_ >= current_node_->total_frames_) {
+        if (!result) {
+            spdlog::info("error detectd!!!!!!!!");
+            NodeError err = result.error();
 
-            audio_node->close();
+            if (err == NodeError::Underrun) {
+                // Underrun אינו קריטי - מחזירים true כדי להמשיך לנגן (שקט)
+                return {true, NodeError::Underrun};
+            }
 
+            if (err != NodeError::EndOfStream) {
+                return {false, err};
+            }
+            // אם זה EndOfStream, אנחנו ממשיכים למטה ללוגיקת
+        }
+
+        bool is_eos = (!result && result.error() == NodeError::EndOfStream);
+        bool limit_reached = (current_node_->processed_frames_ >= current_node_->total_frames_);
+        if (is_eos || limit_reached) {
+            auto result = audio_node->close();
+            if (!result) {
+                return {false, result.error()};
+            }
             spdlog::info("Node [{}] finished. Transitions to [{}]", current_node_->id_,
                          current_node_->target_ ? current_node_->target_->id_ : "END");
 
             current_node_ = current_node_->target_;
 
+            // אם עברנו לצומת הבא, אנחנו מחזירים true כדי שהלולאה ב-Session תמשיך
+            // הפריים הבא יטופל באיטרציה הבאה
             if (current_node_) {
                 stats_.current_node_id = current_node_->id_;
             }
         }
 
         stats_.total_bytes_sent += FRAME_SIZE_BYTES;
-        return (current_node_ != nullptr);
+
+        // מחזירים true כל עוד יש צומת פעיל
+        return {(current_node_ != nullptr), NodeError::Success};
     }
 
-    // Non-audio node encountered
-    return false;
+    // הגענו לצומת שאינו אודיו (כמו ClientsNode בסוף) - מסיימים
+    return {false, NodeError::Success};
 }

@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <expected>
+
+#include "Types.hpp"
 
 constexpr int RETRY_DELAY_MS = 50;
 
@@ -79,7 +82,7 @@ void FileInputNode::set_options(std::shared_ptr<FileOptionsNode> options_node) {
     }
 }
 
-void FileInputNode::open() {
+std::expected<void, NodeError> FileInputNode::open() {
     constexpr int max_retries = 3;
     int attempt = 0;
     boost::system::error_code ec;
@@ -90,7 +93,7 @@ void FileInputNode::open() {
         if (!ec && file_handle_.is_open()) {
             total_frames_ = static_cast<int>(file_handle_.size() / FRAME_SIZE_BYTES);
             spdlog::info("[{}] Opened file. Total frames: {}", file_name_, total_frames_);
-            return;
+            return {};  // Success
         }
 
         spdlog::warn("[{}] Attempt {}: Failed to open file {}: {}", file_name_, attempt + 1,
@@ -104,23 +107,32 @@ void FileInputNode::open() {
                   max_retries);
 
     total_frames_ = 0;  // mark node as inactive
+    return std::unexpected(NodeError::FileIOError);
 }
 
-void FileInputNode::close() {
+std::expected<void, NodeError> FileInputNode::close() {
     boost::system::error_code ec;
     file_handle_.close(ec);
+    if (ec) {
+        return std::unexpected(NodeError::FileIOError);
+    }
     in_buffer_processed_frames_ = 0;
     processed_frames_ = 0;
     is_first_read_ = true;
+    return {};  // Success
 }
 
 boost::asio::awaitable<void> FileInputNode::initialize_buffers() {
     spdlog::info("[{}] Initializing buffers...", file_name_);
-    if (!file_handle_.is_open()) open();
+    if (!file_handle_.is_open()) {
+        auto result = open();
+        if (!result) co_return;  // Failed to open, can't init
+    }
 
     // Initial fill
     bf_.set_read_index(1);
-    co_await request_refill_async();
+    co_await request_refill_async();  // We ignore errors here for simplicity during init, but
+                                      // ideally check them
     bf_.back_buffer_ready_ = true;
 
     bf_.swap();
@@ -129,7 +141,7 @@ boost::asio::awaitable<void> FileInputNode::initialize_buffers() {
     bf_.back_buffer_ready_ = true;
 }
 
-void FileInputNode::process_frame(std::span<uint8_t> frame_buffer) {
+std::expected<void, NodeError> FileInputNode::process_frame(std::span<uint8_t> frame_buffer) {
     auto current_span = bf_.get_read_span();
     size_t buffer_offset = in_buffer_processed_frames_ * FRAME_SIZE_BYTES;
 
@@ -143,7 +155,7 @@ void FileInputNode::process_frame(std::span<uint8_t> frame_buffer) {
     if (buffer_offset + FRAME_SIZE_BYTES > current_span.size()) {
         if (!bf_.back_buffer_ready_) {
             std::fill(frame_buffer.begin(), frame_buffer.end(), 0);  // Underrun
-            return;
+            return std::unexpected(NodeError::Underrun);
         }
 
         bf_.swap();
@@ -158,7 +170,7 @@ void FileInputNode::process_frame(std::span<uint8_t> frame_buffer) {
 
     } else if (processed_frames_ > total_frames_) {
         std::ranges::fill(frame_buffer, 0);
-        return;
+        return std::unexpected(NodeError::EndOfStream);
     }
 
     // Copy to output
@@ -170,6 +182,8 @@ void FileInputNode::process_frame(std::span<uint8_t> frame_buffer) {
 
     in_buffer_processed_frames_++;
     processed_frames_++;
+
+    return {};  // Success
 }
 
 void FileInputNode::apply_effects(std::span<uint8_t> frame_buffer) {
@@ -185,8 +199,8 @@ void FileInputNode::apply_effects(std::span<uint8_t> frame_buffer) {
     }
 }
 
-boost::asio::awaitable<void> FileInputNode::request_refill_async() {
-    if (!file_handle_.is_open()) co_return;
+boost::asio::awaitable<std::expected<void, NodeError>> FileInputNode::request_refill_async() {
+    if (!file_handle_.is_open()) co_return std::unexpected(NodeError::FileIOError);
 
     auto buffer_span = bf_.get_write_span();
     constexpr int max_retries = 3;
@@ -202,7 +216,7 @@ boost::asio::awaitable<void> FileInputNode::request_refill_async() {
                 std::fill(buffer_span.begin() + bytes_read, buffer_span.end(), 0);
             }
             bf_.back_buffer_ready_ = true;
-            co_return;
+            co_return std::unexpected<NodeError>(NodeError::Success);  // Success
         } else {
             spdlog::warn("[{}] Refill read attempt {} failed: {}", file_name_, attempt + 1,
                          ec.message());
@@ -218,6 +232,7 @@ boost::asio::awaitable<void> FileInputNode::request_refill_async() {
                   max_retries);
     std::fill(buffer_span.begin(), buffer_span.end(), 0);
     bf_.back_buffer_ready_ = true;
+    co_return std::unexpected(NodeError::FileIOError);
 }
 
 // =========================================================
@@ -245,25 +260,40 @@ void MixerNode::add_input(FileInputNode* node) {
     inputs_.push_back(node);
 }
 
-void MixerNode::close() {
+std::expected<void, NodeError> MixerNode::close() {
     for (auto* input : inputs_) {
         if (auto* audio = input->as_audio()) {
-            audio->close();
+            auto result = audio->close();
+            if (!result) {
+                return std::unexpected<NodeError>(result.error());
+            }
         }
     }
     in_buffer_processed_frames_ = 0;
     processed_frames_ = 0;
+    return {};
 }
 
-void MixerNode::process_frame(std::span<uint8_t> frame_buffer) {
+std::expected<void, NodeError> MixerNode::process_frame(std::span<uint8_t> frame_buffer) {
     accumulator_.fill(0);
     bool has_active_inputs = false;
 
     for (auto* input_node : inputs_) {
         if (auto* audio_source = input_node->as_audio()) {
-            has_active_inputs = true;
+            auto result = audio_source->process_frame(temp_input_buffer_);
 
-            audio_source->process_frame(temp_input_buffer_);
+            if (!result) {
+                NodeError err = result.error();
+                // Critical errors stop the mixer immediately
+                if (err == NodeError::FileIOError || err == NodeError::Critical) {
+                    return std::unexpected(err);
+                }
+                // EOS or Underrun just means we skip this input for this frame (it's silent)
+                // We do NOT set has_active_inputs = true here.
+                continue;
+            }
+
+            has_active_inputs = true;
 
             const auto* input_samples = reinterpret_cast<const int16_t*>(temp_input_buffer_.data());
             for (size_t i = 0; i < SAMPLES_PER_FRAME; ++i) {
@@ -276,7 +306,8 @@ void MixerNode::process_frame(std::span<uint8_t> frame_buffer) {
 
     if (!has_active_inputs) {
         std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
-        return;
+        // If no inputs are active, we consider the mixer stream ended
+        return std::unexpected(NodeError::EndOfStream);
     }
 
     for (size_t i = 0; i < SAMPLES_PER_FRAME; ++i) {
@@ -291,6 +322,8 @@ void MixerNode::process_frame(std::span<uint8_t> frame_buffer) {
 
     in_buffer_processed_frames_++;
     processed_frames_++;
+
+    return {};
 }
 
 // =========================================================
@@ -305,15 +338,17 @@ IAudioProcessor* DelayNode::as_audio() {
     return this;
 }
 
-void DelayNode::close() {
+std::expected<void, NodeError> DelayNode::close() {
     in_buffer_processed_frames_ = 0;
     processed_frames_ = 0;
+    return {};
 }
 
-void DelayNode::process_frame(std::span<uint8_t> frame_buffer) {
+std::expected<void, NodeError> DelayNode::process_frame(std::span<uint8_t> frame_buffer) {
     std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
     in_buffer_processed_frames_++;
     processed_frames_++;
+    return {};
 }
 
 ClientsNode::ClientsNode(Node* t) : Node(t) {

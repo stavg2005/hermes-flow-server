@@ -4,6 +4,11 @@
 #include <memory>
 #include <string>
 
+#include "ActiveSessions.hpp"
+#include "IoContextPool.hpp"
+#include "Listener.hpp"
+#include "Router.hpp"
+#include "Types.hpp"
 
 /**
  * @brief High-level HTTP Server Facade.
@@ -19,6 +24,10 @@ class Server : public std::enable_shared_from_this<Server> {
     void Stop();
 
    private:
-    struct Impl;
-    std::unique_ptr<Impl> pImpl_;
+    std::shared_ptr<IoContextPool> pool_;
+    std::shared_ptr<ActiveSessions> active_sessions_;
+    std::shared_ptr<Router> router_;
+    std::shared_ptr<Listener> listener_;
+
+    asio::io_context& main_io_;
 };

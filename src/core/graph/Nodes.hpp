@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <boost/asio.hpp>
+#include <expected>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -65,10 +66,10 @@ struct DoubleBuffer {
  */
 struct IAudioProcessor {
     /** @brief Process the next audio frame into the provided buffer. */
-    virtual void process_frame(std::span<uint8_t> frame_buffer) = 0;
+    virtual std::expected<void, NodeError> process_frame(std::span<uint8_t> frame_buffer) = 0;
 
     /** @brief Release resources and reset node state. */
-    virtual void close() = 0;
+    virtual std::expected<void, NodeError> close() = 0;
 
     virtual ~IAudioProcessor() = default;
 };
@@ -136,8 +137,8 @@ struct FileInputNode : Node,
 
     // Overrides
     IAudioProcessor* as_audio() override;
-    void process_frame(std::span<uint8_t> frame_buffer) override;
-    void close() override;
+    std::expected<void, NodeError> process_frame(std::span<uint8_t> frame_buffer) override;
+    std::expected<void, NodeError> close() override;
 
     /**
      * @brief Fill both buffers of the file input asynchronously.
@@ -151,7 +152,7 @@ struct FileInputNode : Node,
     void set_options(std::shared_ptr<FileOptionsNode> options_node);
 
     /** @brief Open the file on disk and compute total frames. */
-    void open();
+    std::expected<void, NodeError> open();
 
     /**
      * @brief Apply audio effects to the current frame buffer.
@@ -162,7 +163,7 @@ struct FileInputNode : Node,
     /**
      * @brief Refill the back buffer asynchronously.
      */
-    boost::asio::awaitable<void> request_refill_async();
+    boost::asio::awaitable<std::expected<void, NodeError>> request_refill_async();
 };
 
 /**
@@ -177,8 +178,8 @@ struct MixerNode : Node, IAudioProcessor {
 
     // Overrides
     IAudioProcessor* as_audio() override;
-    void process_frame(std::span<uint8_t> frame_buffer) override;
-    void close() override;
+    std::expected<void, NodeError> process_frame(std::span<uint8_t> frame_buffer) override;
+    std::expected<void, NodeError> close() override;
 
     // Specific Methods
     void set_max_frames();
@@ -194,8 +195,8 @@ struct DelayNode : Node, IAudioProcessor {
     explicit DelayNode(Node* t = nullptr);
 
     IAudioProcessor* as_audio() override;
-    void process_frame(std::span<uint8_t> frame_buffer) override;
-    void close() override;
+    std::expected<void, NodeError> process_frame(std::span<uint8_t> frame_buffer) override;
+    std::expected<void, NodeError> close() override;
 };
 
 /**

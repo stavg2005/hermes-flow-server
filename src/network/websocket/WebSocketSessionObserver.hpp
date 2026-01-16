@@ -19,15 +19,28 @@ class WebSocketSessionObserver : public ISessionObserver {
             boost::json::object j;
             j["type"] = "stats";
             j["node"] = stats.current_node_id;
-            j["progress"] = stats.progress_percent;
             j["bytes"] = stats.total_bytes_sent;
 
             session->send(boost::json::serialize(j));
         }
     }
 
-    //TODO  implemnt  this functions on a diffrent branch.
+
     void OnNodeTransition(const std::string& id) override { /* ... */ }
-    void OnSessionComplete() override { /* ... */ }
-    void OnError(const std::string& error_message) override { /* ... */ }
+    void OnSessionComplete() override {
+        if (auto session = ws_.lock()) {
+            boost::json::object j;
+            j["type"] = "completion";
+            j["message"] = "Session Complete";
+            session->send(boost::json::serialize(j));
+        }
+    }
+    void OnError(const std::string& error_message) override {
+        if (auto session = ws_.lock()) {
+            boost::json::object j;
+            j["type"] = "error";
+            j["message"] = error_message;
+            session->send(boost::json::serialize(j));
+        }
+    }
 };

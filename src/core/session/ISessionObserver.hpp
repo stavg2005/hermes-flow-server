@@ -4,10 +4,7 @@
 struct SessionStats {
     std::string session_id;
     std::string current_node_id;
-    double progress_percent;
     size_t total_bytes_sent;
-    int active_inputs;
-    double buffer_health;
 };
 
 /**
