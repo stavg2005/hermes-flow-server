@@ -20,7 +20,7 @@
 
 using namespace hermes::net;
 using namespace hermes::audio;
-static void setup_logging() {
+static void SetupLogging() {
   std::vector<spdlog::sink_ptr> sinks;
 
   // A. Console Sink
@@ -52,10 +52,9 @@ static void setup_logging() {
 int main(int argc, char* argv[]) {
   // Safety net for unexpected runtime crashes (e.g. std::bad_alloc)
   try {
-    setup_logging();
+    SetupLogging();
 
-    
-    auto cfg_result = load_config("../config.toml");
+    auto cfg_result = LoadConfig("../config.toml");
 
     if (!cfg_result) {
       spdlog::critical("Failed to load configuration: {}",

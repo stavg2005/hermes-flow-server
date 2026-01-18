@@ -38,7 +38,7 @@ struct ALawCodecStrategy : ICodecStrategy {
     auto samples = std::span<const int16_t>(
         reinterpret_cast<const int16_t*>(pcm.data()), sample_count);
 
-    encode_alaw(samples, out_buffer);
+    EncodeAlaw(samples, out_buffer);
 
     return sample_count;  // A-Law is 1 byte per sample
   }

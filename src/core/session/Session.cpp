@@ -169,12 +169,12 @@ void Session::UpdateStatsIfNeeded(
 
   auto now = std::chrono::steady_clock::now();
   if (now - last_stats_time > std::chrono::milliseconds(100)) {
-    observer_->OnStatsUpdate(audio_executor_->get_stats());
+    observer_->OnStatsUpdate(audio_executor_->GetStats());
     last_stats_time = now;
   }
 }
 
-bool Session::get_is_running() const { return is_running_; }
+bool Session::IsRunning() const { return is_running_; }
 
 Session::~Session() = default;
 }  // namespace hermese::service

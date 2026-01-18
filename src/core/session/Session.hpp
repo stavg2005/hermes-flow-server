@@ -78,7 +78,7 @@ class Session : public std::enable_shared_from_this<Session> {
    * @brief Checks if the session is currently running.
    * @return true if running, false otherwise.
    */
-  bool get_is_running() const;
+  bool IsRunning() const;
 
   /**
    * @brief Scans the graph for 'ClientsNode' and registers them with the

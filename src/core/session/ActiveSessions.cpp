@@ -16,7 +16,7 @@ namespace hermes::service {
 ActiveSessions::ActiveSessions(std::shared_ptr<IoContextPool> pool)
     : pool_(std::move(pool)) {}
 
-std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
+std::expected<std::string, ErrorInfo> ActiveSessions::CreateSession(
     const boost::json::object& jobj) {
   if (!pool_) {
     spdlog::critical("ActiveSessions: IoContextPool is null!");
@@ -56,7 +56,7 @@ std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
   return session_id;
 }
 
-std::expected<void, ErrorInfo> ActiveSessions::create_and_run_WebsocketSession(
+std::expected<void, ErrorInfo> ActiveSessions::CreateAndRunWebsocketSession(
     const std::string& audio_session_id, const req_t& req,
     boost::beast::tcp_stream& stream) {
   std::shared_ptr<Session> session;
@@ -70,7 +70,7 @@ std::expected<void, ErrorInfo> ActiveSessions::create_and_run_WebsocketSession(
     session = it->second;
   }
 
-  if (session->get_is_running()) {
+  if (session->IsRunning()) {
     return std::unexpected(
         ErrorInfo::From(AppError::LogicError,
                         "A WebSocket is already connected to this session"));
@@ -99,14 +99,14 @@ std::expected<void, ErrorInfo> ActiveSessions::create_and_run_WebsocketSession(
         } catch (const std::exception& e) {
           spdlog::error("[{}] Unhandled session exception: {}", id, e.what());
         }
-        remove_session(id);
+        RemoveSession(id);
       },
       asio::detached);
 
   return {};
 }
 
-ActiveSessions::RemoveStatus ActiveSessions::remove_session(
+ActiveSessions::RemoveStatus ActiveSessions::RemoveSession(
     const std::string& id) {
   std::lock_guard<std::mutex> lock(mutex_);
 

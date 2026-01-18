@@ -32,7 +32,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
    * @brief Factory method to spawn a new Audio Session.
    * @return The unique session ID (string) to be returned to the client.
    */
-  std::expected<std::string, ErrorInfo> create_session(
+  std::expected<std::string, ErrorInfo> CreateSession(
       const boost::json::object& jobj);
 
   /**
@@ -40,21 +40,21 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
    * session.
    * @param stream The underlying TCP stream (moved from the HTTP handler).
    */
-  std::expected<void, ErrorInfo> create_and_run_WebsocketSession(
+  std::expected<void, ErrorInfo> CreateAndRunWebsocketSession(
       const std::string& audio_session_id, const req_t& req,
       boost::beast::tcp_stream& stream);
 
   enum class RemoveStatus { Success, SessionNotFound, WebSocketNotFound };
-  RemoveStatus remove_session(const std::string& id);
+  RemoveStatus RemoveSession(const std::string& id);
 
 
-  std::shared_ptr<Session> get(const std::string& id) const;
-  std::vector<std::string> list_ids() const;
-  std::size_t size() const noexcept;
+  std::shared_ptr<Session> Get(const std::string& id) const;
+  std::vector<std::string> ListIds() const;
+  std::size_t Size() const noexcept;
 
 
-  void stop_all();
-  void on_session_stopped(const std::string& id);
+  void StopAll();
+  void OnSessionStopped(const std::string& id);
 
 
   ActiveSessions(const ActiveSessions&) = delete;
@@ -67,7 +67,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
   std::atomic<int64_t> next_session_id_{0};
   boost::uuids::random_generator generator_;
 
-  
+
   std::unordered_map<std::string, std::shared_ptr<Session>> sessions_;
   std::unordered_map<std::string,
                      std::shared_ptr<net::websocket::WebSocketSession>>

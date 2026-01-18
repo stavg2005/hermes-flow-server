@@ -24,7 +24,7 @@ AudioExecutor::AudioExecutor(boost::asio::io_context& io,
   current_node_ = graph_->start_node;
 }
 
-SessionStats& AudioExecutor::get_stats() { return stats_; }
+SessionStats& AudioExecutor::GetStats() { return stats_; }
 
 boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
 AudioExecutor::Prepare() {
@@ -81,7 +81,7 @@ AudioExecutor::EnsureAssetsExist() {
 
       auto s3_session = std::move(*session_result);
       auto download_result =
-          co_await s3_session->request_file(file_node->file_name_);
+          co_await s3_session->RequestFile(file_node->file_name_);
 
       if (!download_result) {
         co_return Error(config::AppError::FileSystemError,

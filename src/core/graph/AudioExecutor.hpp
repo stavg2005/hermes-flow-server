@@ -28,7 +28,7 @@ class AudioExecutor {
    * @return A reference to the stats object used by Observers (e.g.,
    * WebSocket).
    */
-  service::SessionStats& get_stats();
+  service::SessionStats& GetStats();
 
   /**
    * @brief Scans the graph for FileInputNodes.

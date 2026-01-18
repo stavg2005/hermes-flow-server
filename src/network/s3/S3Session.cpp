@@ -44,14 +44,14 @@ static constexpr size_t PROGRESS_LOG_MB = 100;
 // Helper Methods
 // ============================================================================
 
-http::request<http::empty_body> S3Session::build_download_request(
+http::request<http::empty_body> S3Session::BuildDownloadRequest(
     const std::string& file_key) const {
   spdlog::debug("service is {}", cfg_.service);
   return S3RequestFactory::create_signed_get_request(cfg_, http::verb::get,
                                                      file_key);
 }
 
-asio::awaitable<std::expected<void, ErrorInfo>> S3Session::connect() {
+asio::awaitable<std::expected<void, ErrorInfo>> S3Session::Connect() {
   spdlog::debug("attempting to connect to minio with {} {}", cfg_.host,
                 cfg_.port);
   try {
@@ -70,9 +70,9 @@ asio::awaitable<std::expected<void, ErrorInfo>> S3Session::connect() {
 }
 
 asio::awaitable<std::expected<std::pair<size_t, beast::flat_buffer>, ErrorInfo>>
-S3Session::write_request_and_read_headers(const std::string& file_key) {
+S3Session::WriteRequestAndReadHeaders(const std::string& file_key) {
   try {
-    auto req = build_download_request(file_key);
+    auto req = BuildDownloadRequest(file_key);
     co_await http::async_write(stream_, req, asio::use_awaitable);
 
     beast::flat_buffer header_buffer;
@@ -121,7 +121,7 @@ S3Session::write_request_and_read_headers(const std::string& file_key) {
 }
 
 std::expected<std::pair<asio::stream_file, std::filesystem::path>, ErrorInfo>
-S3Session::prepare_local_file(const std::string& file_key) {
+S3Session::PrepareLocalFile(const std::string& file_key) {
   const std::filesystem::path local_dir = "downloads";
   const auto filename = std::filesystem::path(file_key).filename();
   std::filesystem::path local_path = local_dir / filename;
@@ -153,7 +153,7 @@ S3Session::prepare_local_file(const std::string& file_key) {
 }
 
 asio::awaitable<std::expected<size_t, ErrorInfo>>
-S3Session::stream_body_to_file(asio::stream_file& file, size_t expected_size,
+S3Session::StreamBodyToFile(asio::stream_file& file, size_t expected_size,
                                beast::flat_buffer& header_buffer) {
   size_t total_written = 0;
   size_t last_logged_mb = 0;
@@ -218,21 +218,21 @@ S3Session::stream_body_to_file(asio::stream_file& file, size_t expected_size,
   }
 }
 
-boost::asio::awaitable<std::expected<void, ErrorInfo>> S3Session::request_file(
+boost::asio::awaitable<std::expected<void, ErrorInfo>> S3Session::RequestFile(
     std::string file_key) {
   spdlog::info("[S3] Initiating request for: {}", file_key);
 
   stream_.expires_never();
 
-  auto connect_res = co_await connect();
+  auto connect_res = co_await Connect();
   if (!connect_res) co_return std::unexpected(connect_res.error());
 
-  auto header_res = co_await write_request_and_read_headers(file_key);
+  auto header_res = co_await WriteRequestAndReadHeaders(file_key);
   if (!header_res) co_return std::unexpected(header_res.error());
 
   auto [expected_size, header_buf] = std::move(*header_res);
 
-  auto file_res = prepare_local_file(file_key);
+  auto file_res = PrepareLocalFile(file_key);
   if (!file_res) co_return std::unexpected(file_res.error());
 
   auto [file, path] = std::move(*file_res);
@@ -240,7 +240,7 @@ boost::asio::awaitable<std::expected<void, ErrorInfo>> S3Session::request_file(
   PartialFileGuard guard(path);
 
   auto stream_res =
-      co_await stream_body_to_file(file, expected_size, header_buf);
+      co_await StreamBodyToFile(file, expected_size, header_buf);
 
   if (!stream_res) {
     co_return std::unexpected(stream_res.error());
@@ -261,7 +261,7 @@ std::expected<std::shared_ptr<S3Session>, ErrorInfo> S3Session::Create(
   S3Config final_config = manual_cfg;
 
   if (final_config.access_key.empty()) {
-    auto config_result = load_config("../config.toml");
+    auto config_result = LoadConfig("../config.toml");
 
     if (!config_result) {
       spdlog::error("S3Session failed to load config: {}",

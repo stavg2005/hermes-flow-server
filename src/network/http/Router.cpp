@@ -108,7 +108,7 @@ std::expected<void, RouteError> Router::handle_transmit(const req_t& req,
         RouteError{beast::http::status::bad_request, "JSON root must be an object"});
   }
 
-  auto result = active_->create_session(jv.as_object());
+  auto result = active_->CreateSession(jv.as_object());
 
   if (!result) {
     return std::unexpected(
@@ -131,7 +131,7 @@ std::expected<void, RouteError> Router::handle_stop(const req_t& req,
   }
 
   std::string id((*it)->value);
-  auto status = active_->remove_session(id);
+  auto status = active_->RemoveSession(id);
 
   using enum ActiveSessions::RemoveStatus;
 
@@ -167,7 +167,7 @@ std::expected<void, RouteError> Router::handle_websocket_request(
   std::string id((*it)->value);
   spdlog::info("Attaching WebSocket to session: {}", id);
 
-  auto result = active_->create_and_run_WebsocketSession(id, req, stream);
+  auto result = active_->CreateAndRunWebsocketSession(id, req, stream);
 
   if (!result) {
     return std::unexpected(

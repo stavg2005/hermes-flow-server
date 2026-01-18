@@ -38,7 +38,7 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
    * @param file_key The S3 object key to download
    */
   boost::asio::awaitable<std::expected<void, hermes::config::ErrorInfo>>
-  request_file(std::string file_key);
+  RequestFile(std::string file_key);
 
  private:
   /**
@@ -53,14 +53,14 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
   /**
    * @brief The main coroutine orchestrating the download logic.
    */
-  boost::asio::awaitable<void> do_download_file(std::string file_key);
+  boost::asio::awaitable<void> DoDownloadFile(std::string file_key);
 
   /**
    * @brief Creates and signs the S3 GET request.
    * @param file_key The object key to request.
    * @return A signed http::request.
    */
-  boost::beast::http::request<boost::beast::http::empty_body> build_download_request(
+  boost::beast::http::request<boost::beast::http::empty_body> BuildDownloadRequest(
       const std::string& file_key) const;
 
   // --- Coroutine Helpers ---
@@ -68,14 +68,14 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
   /**
    * @brief Resolves S3 host and connects the TCP socket.
    */
-  boost::asio::awaitable<std::expected<void, hermes::config::ErrorInfo>> connect();
+  boost::asio::awaitable<std::expected<void, hermes::config::ErrorInfo>> Connect();
 
   /**
    * @brief Writes the HTTP request and reads/parses the HTTP response headers.
    */
   boost::asio::awaitable<std::expected<
       std::pair<size_t, boost::beast::flat_buffer>, hermes::config::ErrorInfo>>
-  write_request_and_read_headers(const std::string& file_key);
+  WriteRequestAndReadHeaders(const std::string& file_key);
 
   /**
    * @brief Creates local directories and opens the destination file for
@@ -83,19 +83,19 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
    */
   std::expected<std::pair<boost::asio::stream_file, std::filesystem::path>,
                 hermes::config::ErrorInfo>
-  prepare_local_file(const std::string& file_key);
+  PrepareLocalFile(const std::string& file_key);
 
   /**
    * @brief The core streaming loop.
    */
   boost::asio::awaitable<std::expected<size_t, hermes::config::ErrorInfo>>
-  stream_body_to_file(boost::asio::stream_file& file, size_t expected_size,
+  StreamBodyToFile(boost::asio::stream_file& file, size_t expected_size,
                       boost::beast::flat_buffer& header_buffer);
 
   /**
    * @brief Performs a graceful shutdown and close of the socket.
    */
-  void cleanup_socket();
+  void CleanupSocket();
 
   boost::asio::io_context& ioc_;
   hermes::config::S3Config cfg_;

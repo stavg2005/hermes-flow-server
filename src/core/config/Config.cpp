@@ -7,7 +7,7 @@
 
 namespace hermes::config {
 template <typename T>
-std::expected<T, std::string> require_key(
+std::expected<T, std::string> RequireKey(
     const toml::node_view<toml::node>& node, const char* key) {
   auto val = node[key];
   if (!val) {
@@ -17,7 +17,7 @@ std::expected<T, std::string> require_key(
   return val.value<T>().value();
 }
 
-std::expected<AppConfig, ErrorInfo> load_config(const std::string& path) {
+std::expected<AppConfig, ErrorInfo> LoadConfig(const std::string& path) {
   AppConfig config;
 
   if (!std::filesystem::exists(path)) {
@@ -49,14 +49,14 @@ std::expected<AppConfig, ErrorInfo> load_config(const std::string& path) {
     config.s3.region = s3["region"].value_or("us-east-1");
     config.s3.service = s3["service"].value_or("s3");
 
-    auto access_key = require_key<std::string>(s3, "access_key");
+    auto access_key = RequireKey<std::string>(s3, "access_key");
     if (!access_key) {
       return std::unexpected(
           ErrorInfo::From(AppError::ConfigError, access_key.error()));
     }
     config.s3.access_key = *access_key;
 
-    auto secret_key = require_key<std::string>(s3, "secret_key");
+    auto secret_key = RequireKey<std::string>(s3, "secret_key");
     if (!secret_key) {
       return std::unexpected(
           ErrorInfo::From(AppError::ConfigError, secret_key.error()));
