@@ -3,35 +3,45 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/beast.hpp>
 #include <boost/url/url_view.hpp>
+#include <expected>  // C++23
 #include <memory>
 
 #include "ActiveSessions.hpp"
-#include "WebSocketSessionObserver.hpp"
 #include "IoContextPool.hpp"
-#include "response_builder.hpp"
 #include "Types.hpp"
+#include "WebSocketSessionObserver.hpp"
+#include "response_builder.hpp"
+namespace hermes::net::http {
+using req_t = beast::http::request<beast::http::string_body>;
+using res_t = beast::http::response<beast::http::string_body>;
 
-
-using req_t = http::request<http::string_body>;
-using res_t = http::response<http::string_body>;
+// Simple structure to hold routing errors without exceptions
+struct RouteError {
+  beast::http::status code;
+  std::string message;
+};
 
 class Router {
-   public:
-    explicit Router(std::shared_ptr<ActiveSessions> active, std::shared_ptr<IoContextPool> pool);
+ public:
+  explicit Router(std::shared_ptr<hermes::service::ActiveSessions> active,
+                  std::shared_ptr<IoContextPool> pool);
 
-    void RouteQuery(const req_t& req, res_t& res, boost::beast::tcp_stream& stream);
+  void RouteQuery(const req_t& req, res_t& res,
+                  boost::beast::tcp_stream& stream);
 
-   private:
-    // Handlers
-    void handle_transmit(const req_t& req, res_t& res);
+ private:
+  // Handlers now return an expected result
+  std::expected<void, RouteError> handle_transmit(const req_t& req, res_t& res);
 
-    /**
-     * @brief Upgrades to WebSocket. Socket ownership is moved to WebSocketSession
-     *this session will terminate.
-     */
-    void handle_websocket_request(const req_t& req, res_t& res, boost::beast::tcp_stream& stream);
-    void handle_stop(const req_t& req, res_t& res);
+  /**
+   * @brief Upgrades to WebSocket. Socket ownership is moved to WebSocketSession
+   */
+  std::expected<void, RouteError> handle_websocket_request(
+      const req_t& req, res_t& res, boost::beast::tcp_stream& stream);
 
-    std::shared_ptr<ActiveSessions> active_;
-    std::shared_ptr<IoContextPool> pool_;
+  std::expected<void, RouteError> handle_stop(const req_t& req, res_t& res);
+
+  std::shared_ptr<hermes::service::ActiveSessions> active_;
+  std::shared_ptr<IoContextPool> pool_;
 };
+}  // namespace hermes::net::http

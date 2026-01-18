@@ -12,122 +12,169 @@
 #include "ISessionObserver.hpp"
 #include "Nodes.hpp"
 #include "RTPStreamer.hpp"
+#include "Types.hpp"
+using namespace hermes::audio;
+namespace hermes::service {
+Session::Session(asio::io_context& io, std::string id, Graph&& g)
+    : io_(io),
+      id_(std::move(id)),
+      timer_(io),
+      graph_(std::make_shared<Graph>(std::move(g))) {
+  audio_executor_ = std::make_unique<AudioExecutor>(io_, graph_);
+  streamer_ = std::make_unique<RTPStreamer>(io_);
 
-Session::Session(net::io_context& io, std::string id, Graph&& g)
-    : io_(io), id_(std::move(id)), timer_(io), graph_(std::make_shared<Graph>(std::move(g))) {
-    audio_executor_ = std::make_unique<AudioExecutor>(io_, graph_);
-    streamer_ = std::make_unique<RTPStreamer>(io_);
-
-    spdlog::debug("Session [{}] created.", id_);
+  spdlog::debug("Session [{}] created.", id_);
 }
 
 void Session::AttachObserver(std::shared_ptr<ISessionObserver> observer) {
-    observer_ = std::move(observer);
-    spdlog::info("[{}] Observer attached.", id_);
+  observer_ = std::move(observer);
+  spdlog::info("[{}] Observer attached.", id_);
 }
 
 void Session::AddClient(const std::string& ip, uint16_t port) {
-    streamer_->AddClient(ip, port);
+  streamer_->AddClient(ip, port);
 }
 
-void Session::stop() {
-    spdlog::info("[{}] Stopping session...", id_);
-    is_running_ = false;
+void Session::Stop() {
+  spdlog::info("[{}] Stopping session...", id_);
+  is_running_ = false;
 
-    timer_.cancel();
+  timer_.cancel();
 }
 
-// Initialize streamer with clients found in the graph
 void Session::ConfigureStreamerFromGraph() {
-    for (const auto& node : graph_->nodes) {
-        if (node->kind_ == NodeKind::Clients) {
-            auto* clientsNode = static_cast<ClientsNode*>(node.get());
+  for (const auto& node : graph_->nodes) {
+    if (node->kind_ == NodeKind::Clients) {
+      auto* clientsNode = static_cast<ClientsNode*>(node.get());
 
-            for (const auto& [ip, port] : clientsNode->clients) {
-                spdlog::info("[{}] Auto-registering client: {}:{}", id_, ip, port);
-                streamer_->AddClient(ip, port);
-            }
-        }
+      for (const auto& [ip, port] : clientsNode->clients) {
+        spdlog::info("[{}] Auto-registering client: {}:{}", id_, ip, port);
+        streamer_->AddClient(ip, port);
+      }
     }
+  }
 }
+asio::awaitable<void> Session::Start() {
+  spdlog::info("[{}] Starting session execution...", id_);
+  is_running_ = true;
 
-net::awaitable<void> Session::start() {
-    spdlog::info("[{}] Starting session execution...", id_);
-    is_running_ = true;
 
+  if (!co_await InitializeGraphExecution()) {
+    // InitializeGraphExecution already handled the logging/observer for the
+    // error
+    Stop();
+    co_return;
+  }
+
+  ConfigureStreamerFromGraph();
+
+  auto next_tick = std::chrono::steady_clock::now();
+  auto last_stats_time = std::chrono::steady_clock::now();
+  std::array<uint8_t, FRAME_SIZE_BYTES> pcm_buffer;
+
+  // Track why the session ended. Default is Success (natural end).
+  NodeError exit_reason;
+  exit_reason.code = NodeErrorCode::Success;
+
+
+  while (is_running_) {
+    next_tick += std::chrono::milliseconds(20);
+    timer_.expires_at(next_tick);
     try {
-        co_await audio_executor_->Prepare();
-    } catch (const std::exception& e) {
-        spdlog::error("[{}] Audio preparation failed: {}", id_, e.what());
-        if (observer_) {
-            observer_->OnError("Audio preparation failed: " + std::string(e.what()));
-        }
-        stop();
-        co_return;
+    // If timer is cancelled, this will throw
+    co_await timer_.async_wait(asio::use_awaitable);
+  } catch (const boost::system::system_error& e) {
+    if (e.code() == boost::asio::error::operation_aborted) {
+      spdlog::debug("[{}] Timer cancelled, stopping loop.", id_);
+      break; // Exit the loop gracefully
+    }
+    throw; // Rethrow real errors
+  }
+
+
+    auto [executor_wants_continue, status] =
+        audio_executor_->GetNextFrame(pcm_buffer);
+
+
+    if (!IsStatusOk(status.code)) {
+      exit_reason.code = status.code;
+      break;  // Stop immediately on critical error
     }
 
-    ConfigureStreamerFromGraph();
 
-    // Audio Processing Loop
-    // 20ms Frame Duration
-    auto next_tick = std::chrono::steady_clock::now();
-    auto last_stats_time = std::chrono::steady_clock::now();
-    std::array<uint8_t, FRAME_SIZE_BYTES> pcm_buffer;
-
-    for (;;) {
-        if (!is_running_) break;
-
-        // 1. Timer Wait (20ms)
-        next_tick += std::chrono::milliseconds(20);
-        timer_.expires_at(next_tick);
-        co_await timer_.async_wait(net::use_awaitable);
-
-        // 2. Fetch Frame
-        auto [should_continue, status] = audio_executor_->GetNextFrame(pcm_buffer);
-
-        // 3. Error / Status Handling
-        if (status != NodeError::Success) {
-            if (status == NodeError::Underrun) {
-                spdlog::warn("[{}] Underrun detected (inserting silence)", id_);
-            } else if (status == NodeError::EndOfStream) {
-                spdlog::debug("[{}] Node reached EndOfStream", id_);
-            } else {
-                spdlog::error("[{}] Critical error: {}", id_, to_string(status));
-
-                if (observer_) {
-                    observer_->OnError(std::string(to_string(status)));
-                }
-                // שגיאה קריטית מחייבת עצירה
-                should_continue = false;
-            }
-        }
-
-        // 4. Flow Control
-        if (!should_continue) {
-            spdlog::info("[{}] Session finished (End of Graph).", id_);
-            if (observer_) {
-                observer_->OnSessionComplete();
-            }
-            break;
-        }
-
-        // 5. Send Audio
-        streamer_->SendFrame(pcm_buffer);
-
-        // 6. Update Stats (Throttle to ~10Hz)
-        if (observer_) {
-            auto now = std::chrono::steady_clock::now();
-            if (now - last_stats_time > std::chrono::milliseconds(100)) {
-                observer_->OnStatsUpdate(audio_executor_->get_stats());
-                last_stats_time = now;
-            }
-        }
+    if (!executor_wants_continue) {
+      // Natural finish (exit_reason remains Success)
+      break;
     }
 
-    is_running_ = false;
+    streamer_->SendFrame(pcm_buffer);
+    UpdateStatsIfNeeded(last_stats_time);
+  }
+
+  is_running_ = false;
+
+  FinalizeSession(exit_reason);
 }
-bool Session::get_is_running() const {
-    return is_running_;
+
+asio::awaitable<bool> Session::InitializeGraphExecution() {
+  auto prepare_result = co_await audio_executor_->Prepare();
+
+  if (!prepare_result) {
+    auto err = prepare_result.error();
+    spdlog::error("[{}] Audio preparation failed: {}", id_, err.message);
+    if (observer_) {
+      observer_->OnError("Prep Failed: " + err.message);
+    }
+    co_return false;
+  }
+  co_return true;
 }
+
+bool Session::IsStatusOk(NodeErrorCode code) {
+  if (code == NodeErrorCode::Success) return true;
+
+  // Warnings / Info (Non-breaking)
+  if (code == NodeErrorCode::Underrun) {
+    spdlog::warn("[{}] Underrun detected (inserting silence)", id_);
+    return true;
+  }
+  if (code == NodeErrorCode::EndOfStream) {
+    // Just debug log; the 'executor_wants_continue' bool in start()
+    // handles the actual stopping logic for EOS.
+    spdlog::debug("[{}] Node reached EndOfStream", id_);
+    return true;
+  }
+
+  // Critical Error
+  spdlog::error("[{}] Critical error during frame processing: {}", id_,
+                to_string(code));
+  return false;
+}
+
+void Session::FinalizeSession(const NodeError& result) {
+  if (!observer_) return;
+
+  if (result.code != NodeErrorCode::Success) {
+    spdlog::error("[{}] Session ended with error: {}", id_, result.message);
+    observer_->OnError(result.message);
+  } else {
+    spdlog::info("[{}] Session finished successfully.", id_);
+    observer_->OnSessionComplete();
+  }
+}
+
+void Session::UpdateStatsIfNeeded(
+    std::chrono::steady_clock::time_point& last_stats_time) {
+  if (!observer_) return;
+
+  auto now = std::chrono::steady_clock::now();
+  if (now - last_stats_time > std::chrono::milliseconds(100)) {
+    observer_->OnStatsUpdate(audio_executor_->get_stats());
+    last_stats_time = now;
+  }
+}
+
+bool Session::get_is_running() const { return is_running_; }
 
 Session::~Session() = default;
+}  // namespace hermese::service

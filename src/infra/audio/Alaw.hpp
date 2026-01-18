@@ -2,7 +2,7 @@
 #include <boost/core/span.hpp>
 #include <cstddef>
 #include <cstdint>
-
+namespace hermes::audio {
 /**
  * @brief  G.711a A-Law encoder (LUT-based).
  * @param pcm Input buffer of 16-bit signed integers.
@@ -18,3 +18,4 @@ std::size_t encode_alaw_inplace(uint8_t* buf, std::size_t pcmBytes);
 
 /* (Optional) Decode A-law back to PCM-16 */
 void decode_alaw(boost::span<const uint8_t> alaw, boost::span<int16_t> pcmOut);
+}  // namespace hermes::audio

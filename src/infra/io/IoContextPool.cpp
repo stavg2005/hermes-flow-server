@@ -1,13 +1,26 @@
 #include "IoContextPool.hpp"
+
 #include <stdexcept>
 
 #include "spdlog/spdlog.h"
-
-IoContextPool::IoContextPool(std::size_t pool_size) {
+namespace hermes::infra {
+std::expected<std::shared_ptr<IoContextPool>, ErrorInfo> IoContextPool::Create(
+    std::size_t pool_size) {
   if (pool_size == 0) {
-    throw std::runtime_error("IoContextPool size must be > 0");
+    return std::unexpected(ErrorInfo::From(AppError::ConfigError,
+                                           "IoContextPool size must be > 0"));
   }
 
+  try {
+    return std::shared_ptr<IoContextPool>(new IoContextPool(pool_size));
+  } catch (const std::exception& e) {
+    return std::unexpected(ErrorInfo::From(
+        AppError::Critical,
+        "Failed to allocate IoContextPool: " + std::string(e.what())));
+  }
+}
+
+IoContextPool::IoContextPool(std::size_t pool_size) {
   for (std::size_t i = 0; i < pool_size; ++i) {
     auto ioc = std::make_shared<asio::io_context>();
     io_contexts_.push_back(ioc);
@@ -18,13 +31,11 @@ IoContextPool::IoContextPool(std::size_t pool_size) {
 IoContextPool::~IoContextPool() { stop(); }
 
 void IoContextPool::run() {
-
   if (!threads_.empty()) {
     return;
   }
 
   spdlog::info("Starting I/O pool with {} threads.", io_contexts_.size());
-
 
   for (const auto& ioc : io_contexts_) {
     threads_.emplace_back([ioc]() {
@@ -60,3 +71,4 @@ asio::io_context& IoContextPool::get_io_context() {
 
   return *ptr;
 }
+}  // namespace hermes::infra

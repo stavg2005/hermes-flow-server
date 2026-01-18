@@ -6,7 +6,7 @@
 
 #include "spdlog/spdlog.h"
 
-namespace WavUtils {
+namespace hermes::audio::wav {
 
 // Returns the offset to the start of audio data (after "data" chunk size)
 // Returns 44 (default) if not found or invalid.
@@ -44,4 +44,4 @@ inline size_t GetAudioDataOffset(std::span<const uint8_t> buffer) {
 
     return 44;  // Fallback
 }
-} 
+}

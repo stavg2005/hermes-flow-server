@@ -4,34 +4,36 @@
 #include <boost/beast/core.hpp>
 #include <memory>
 
-#include "Router.hpp"
-#include "boost/asio/io_context.hpp"
 #include "IoContextPool.hpp"
+#include "Router.hpp"
 #include "Types.hpp"
+#include "boost/asio/io_context.hpp"
 
 class ServerContext;
-
-
+using namespace ::hermes::net::http;
+namespace hermes::net {
 /**
  * @brief The TCP Connection Acceptor.
-**/
+ **/
 class Listener : public std::enable_shared_from_this<Listener> {
-   public:
-    // Constructor takes io_context and endpoint to bind to
-    Listener(asio::io_context& ioc, IoContextPool& pool, const tcp::endpoint& endpoint,
-             const std::shared_ptr<Router>& router);
+ public:
+  static std::expected<std::shared_ptr<Listener>, ErrorInfo> Create(
+      asio::io_context& main_ioc, std::shared_ptr<IoContextPool> pool,
+      const tcp::endpoint& endpoint, std::shared_ptr<Router> router);
+  // Start accepting incoming connections
+  void run();
 
-    // Start accepting incoming connections
-    void run();
+ private:
+  // Accept a new connection
+  asio::awaitable<void> do_accept();
 
-   private:
-    // Accept a new connection
-    asio::awaitable<void> do_accept();
+  Listener(asio::io_context& main_ioc, std::shared_ptr<IoContextPool> pool,
+           tcp::acceptor&& acceptor, std::shared_ptr<Router> router);
+  // Member variables
 
-    // Member variables
-
-    tcp::acceptor acceptor_;
-    boost::asio::io_context& main_ioc_;
-    IoContextPool& pool_;
-    std::shared_ptr<Router> router_;
+  tcp::acceptor acceptor_;
+  boost::asio::io_context& main_ioc_;
+  std::shared_ptr<IoContextPool> pool_;
+  std::shared_ptr<Router> router_;
 };
+};  // namespace hermes::net

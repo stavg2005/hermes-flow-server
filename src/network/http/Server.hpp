@@ -9,25 +9,30 @@
 #include "Listener.hpp"
 #include "Router.hpp"
 #include "Types.hpp"
-
+namespace hermes::net {
 /**
  * @brief High-level HTTP Server Facade.
- *    Uses PIMPL for ABI stability
  */
 class Server : public std::enable_shared_from_this<Server> {
-   public:
-    Server(boost::asio::io_context& io, const std::string& address, const std::string& port,
-           unsigned int num_threads);
-    ~Server();
+ public:
+  static std::expected<std::shared_ptr<Server>, ErrorInfo> Create(
+      boost::asio::io_context& main_ioc, const std::string& address,
+      const std::string& port, unsigned int threads);
 
-    void Start();
-    void Stop();
+  ~Server();
 
-   private:
-    std::shared_ptr<IoContextPool> pool_;
-    std::shared_ptr<ActiveSessions> active_sessions_;
-    std::shared_ptr<Router> router_;
-    std::shared_ptr<Listener> listener_;
+  void Start();
+  void Stop();
 
-    asio::io_context& main_io_;
+ private:
+  Server(boost::asio::io_context& main_ioc, std::shared_ptr<IoContextPool> pool,
+         std::shared_ptr<hermes::service::ActiveSessions> sessions,
+         std::shared_ptr<Router> router, std::shared_ptr<Listener> listener);
+  std::shared_ptr<IoContextPool> pool_;
+  std::shared_ptr<hermes::service::ActiveSessions> active_sessions_;
+  std::shared_ptr<Router> router_;
+  std::shared_ptr<Listener> listener_;
+
+  asio::io_context& main_io_;
 };
+}  // namespace hermes::net

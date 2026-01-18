@@ -8,39 +8,44 @@
 #include "Router.hpp"
 #include "Types.hpp"
 
-namespace server::core {
+namespace hermes::net::http {
 
 /**
  * @brief Handles a single HTTP connection.
- * Manages the lifecycle of the socket until it is upgraded (WebSocket) or closed.
+ * Manages the lifecycle of the socket until it is upgraded (WebSocket) or
+ * closed.
  */
 class HttpSession : public std::enable_shared_from_this<HttpSession> {
-   public:
-    HttpSession(tcp::socket&& socket, const std::shared_ptr<Router>& router);
+ public:
+  static std::expected<std::shared_ptr<HttpSession>, ErrorInfo> Create(
+      tcp::socket socket, std::shared_ptr<Router> router);
 
-    // Entry point: launches the session coroutine
-    void run();
+  // Entry point: launches the session coroutine
+  void run();
 
-   private:
-    // Core Logic
-    asio::awaitable<void> do_session();
-    asio::awaitable<void> do_graceful_close();
+ private:
+  HttpSession(tcp::socket&& socket, std::shared_ptr<Router> router);
+  // Core Logic
+  asio::awaitable<void> do_session();
 
-    // I/O Helpers
-    asio::awaitable<std::tuple<beast::error_code, bool>> do_read_request();
-    asio::awaitable<beast::error_code> do_write_response(http::response<http::string_body>& res);
+  
+  asio::awaitable<std::expected<bool, ErrorInfo>> do_read_request();
 
-    // Logic Helpers
-    http::response<http::string_body> do_build_response();
-    bool is_options_request() const;
-    void do_close();
 
-    beast::tcp_stream stream_;
-    std::shared_ptr<Router> router_;
-    beast::flat_buffer buffer_;
+  asio::awaitable<std::expected<void, ErrorInfo>> do_write_response(
+      beast::http::response<beast::http::string_body>& res);
 
-    // Use optional to reuse parser memory
-    std::optional<http::request_parser<http::string_body>> parser_;
+
+  asio::awaitable<std::expected<void, ErrorInfo>> do_graceful_close();
+
+  bool is_options_request() const;
+  beast::http::response<beast::http::string_body> do_build_response();
+  beast::tcp_stream stream_;
+  std::shared_ptr<Router> router_;
+  beast::flat_buffer buffer_;
+
+  // Use optional to reuse parser memory
+  std::optional<beast::http::request_parser<beast::http::string_body>> parser_;
 };
 
-}  
+}  // namespace hermes::net::http

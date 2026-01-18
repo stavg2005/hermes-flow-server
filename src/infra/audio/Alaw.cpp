@@ -1,10 +1,11 @@
 #include <Alaw.hpp>
 #include <array>
-#include <cstdint>
-#include <limits>
 #include <boost/core/span.hpp>
+#include <cstdint>
 #include <cstring>
+#include <limits>
 
+namespace hermes::audio {
 static constexpr int16_t MIN_16BIT_VALUE = std::numeric_limits<int16_t>::min();
 static constexpr int16_t MAX_16BIT_VALUE = std::numeric_limits<int16_t>::max();
 static constexpr uint32_t VALUE_COUNT_16BIT =
@@ -141,11 +142,10 @@ static std::array<uint16_t, VALUE_COUNT_U8BIT> make_decode_table() {
 
 // NOLINTEND(hicpp-signed-bitwise)
 
-void encode_alaw(boost::span<const int16_t> pcm,
-                 boost::span<uint8_t> alawOut) {
+void encode_alaw(boost::span<const int16_t> pcm, boost::span<uint8_t> alawOut) {
   // Ensure output span is large enough
   if (pcm.size() > alawOut.size()) {
-    return; // Or throw an exception based on your error handling policy
+    return;  // Or throw an exception based on your error handling policy
   }
 
   static const auto encode_table = make_encode_table();
@@ -156,12 +156,10 @@ void encode_alaw(boost::span<const int16_t> pcm,
   }
 }
 
-
-void decode_alaw(boost::span<const uint8_t> alaw,
-                 boost::span<int16_t> pcmOut) {
+void decode_alaw(boost::span<const uint8_t> alaw, boost::span<int16_t> pcmOut) {
   // Ensure output span is large enough
   if (alaw.size() > pcmOut.size()) {
-    return; // Or throw an exception based on your error handling policy
+    return;  // Or throw an exception based on your error handling policy
   }
 
   static const auto decode_table = make_decode_table();
@@ -170,3 +168,4 @@ void decode_alaw(boost::span<const uint8_t> alaw,
     pcmOut[i] = decode_table.at(alaw[i]);
   }
 }
+}  // namespace hermes::audio
