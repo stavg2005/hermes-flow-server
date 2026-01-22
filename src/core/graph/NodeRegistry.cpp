@@ -66,22 +66,22 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> CreateMixer(
 
 std::expected<std::shared_ptr<Node>, ErrorInfo> CreateDelay(
     boost::asio::io_context&, const json::object& data) {
-  auto node = std::make_shared<DelayNode>();
+  return require<float>(data, "delay")
+      .and_then([](float delay_sec) -> std::expected<float, ErrorInfo> {
+        if (delay_sec < 0) {
+          return std::unexpected(ErrorInfo::From(AppError::ParseError,
+                                                 "Delay cannot be negative"));
+        }
+        return delay_sec;
+      })
 
-  auto delay_res = require<float>(data, "delay");
-  if (!delay_res) return std::unexpected(delay_res.error());
-
-  // Convert seconds (JSON) to milliseconds (Internal)
-  node->delay_ms_ = *delay_res * 1000;
-
-  // Safety check for invalid delay
-  if (node->delay_ms_ < 0) {
-    return std::unexpected(
-        ErrorInfo::From(AppError::ParseError, "Delay cannot be negative"));
-  }
-
-  node->total_frames_ = static_cast<int>(node->delay_ms_ / FRAME_DURATION);
-  return node;
+      .transform([](float delay_sec) {
+        auto node = std::make_shared<DelayNode>();
+        node->delay_ms_ = delay_sec * 1000;
+        node->total_frames_ =
+            static_cast<int>(node->delay_ms_ / FRAME_DURATION);
+        return node;
+      });
 }
 
 std::expected<std::shared_ptr<Node>, ErrorInfo> CreateFileOptions(
@@ -142,8 +142,6 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> CreateClients(
   }
   return node;
 }
-
-
 
 /**
  * @brief registers default notes with their creator function

@@ -69,7 +69,7 @@ std::expected<void, config::NodeError> AsyncAudioSource::ProcessFrame(
   if (total_frames_ > 0 && processed_frames_ >= total_frames_) {
     std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
 
-    
+
     if (processed_frames_ > total_frames_) {
       // Bypass the Error() helper to avoid spdlog calls
       return std::unexpected<config::NodeError>(

@@ -2,7 +2,11 @@
 
 #include <spdlog/spdlog.h>
 
+#include <ranges>
+
+#include "Config.hpp"
 #include "Types.hpp"
+
 
 using namespace hermes::config;
 namespace hermes::audio {
@@ -59,10 +63,11 @@ std::expected<void, NodeError> MixerNode::ProcessFrame(
 
       has_active_inputs = true;
 
-      const auto* input_samples =
-          reinterpret_cast<const int16_t*>(temp_input_buffer_.data());
-      for (size_t i = 0; i < SAMPLES_PER_FRAME; ++i) {
-        accumulator_[i] += input_samples[i];
+      auto input_samples =
+          std::span(reinterpret_cast<const int16_t*>(temp_input_buffer_.data()),
+                    SAMPLES_PER_FRAME);
+      for (auto [acc, in] : std::views::zip(accumulator_, input_samples)) {
+        acc += in;
       }
     }
   }

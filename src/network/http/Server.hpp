@@ -27,10 +27,10 @@ class Server : public std::enable_shared_from_this<Server> {
  private:
   Server(boost::asio::io_context& main_ioc, std::shared_ptr<IoContextPool> pool,
          std::shared_ptr<hermes::service::ActiveSessions> sessions,
-         std::shared_ptr<Router> router, std::shared_ptr<Listener> listener);
+         std::shared_ptr<http::Router> router, std::shared_ptr<Listener> listener);
   std::shared_ptr<IoContextPool> pool_;
   std::shared_ptr<hermes::service::ActiveSessions> active_sessions_;
-  std::shared_ptr<Router> router_;
+  std::shared_ptr<http::Router> router_;
   std::shared_ptr<Listener> listener_;
 
   asio::io_context& main_io_;

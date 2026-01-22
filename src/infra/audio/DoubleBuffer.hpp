@@ -1,4 +1,4 @@
-#include <stdlib.h>
+
 
 #include <array>
 #include <filesystem>
@@ -8,14 +8,21 @@
 namespace hermes::infra {
 
 /**
- * @brief Async double-buffer.
- * 'back_buffer_ready' must be true before swap.
+ * @brief Async double-buffer for audio streaming.
+ *
+ * Designed for a Single-Producer (S3 Loader), Single-Consumer (Audio Thread) model.
+ * - The "Back" buffer is filled asynchronously.
+ * - The "Front" (Read) buffer is consumed by the audio engine.
+ * - 'back_buffer_ready_' signals when the back buffer is full and ready to swap.
  */
 struct DoubleBuffer {
   std::filesystem::path path_;
 
   /**
-   * @brief Flag indicating the async refill operation has completed.
+   * @brief Atomic flag indicating the back buffer is full.
+   *
+   * Set to 'true' by the S3 loader when download completes for a chunk.
+   * Checked and cleared by the Audio Executor during the swap phase.
    */
   std::atomic<bool> back_buffer_ready_{false};
 

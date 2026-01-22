@@ -2,7 +2,10 @@
 
 #include <stdexcept>
 
+#include "Types.hpp"
 #include "spdlog/spdlog.h"
+
+using namespace hermes::config;
 namespace hermes::infra {
 std::expected<std::shared_ptr<IoContextPool>, ErrorInfo> IoContextPool::Create(
     std::size_t pool_size) {

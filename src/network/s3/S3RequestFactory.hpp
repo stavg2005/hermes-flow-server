@@ -25,7 +25,7 @@ http::request<http::empty_body> create_signed_get_request(
   std::tm timeinfo = get_safe_gmtime(now);
 
   // 1. Determine Host & URI (MinIO vs AWS Logic)
-  bool is_aws = (cfg.host.find("amazonaws.com") != std::string::npos);
+  bool is_aws = cfg.host.contains("amazonaws.com");
   std::string full_host = cfg.host;
   std::string canonical_uri;
 

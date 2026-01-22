@@ -6,6 +6,7 @@
 #include <memory>
 
 using namespace hermes::service;
+using namespace hermes::net::http;
 namespace hermes::net {
 std::expected<std::shared_ptr<Server>, ErrorInfo> Server::Create(
     boost::asio::io_context& main_ioc, const std::string& address,

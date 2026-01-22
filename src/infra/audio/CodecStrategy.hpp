@@ -23,6 +23,15 @@ struct ICodecStrategy {
 
   // Metadata required by RTP Packetizer
   virtual uint8_t GetPayloadType() const = 0;
+
+  /**
+   * @brief Calculates the RTP timestamp increment for a given PCM chunk.
+   *
+   * For most codecs (like G.711 or PCM), the timestamp increments by the number
+   * of samples. For example, 20ms of 8kHz audio = 160 samples = 160 ticks.
+   *
+   * @param pcm_byte_size Size of the raw PCM input in bytes.
+   */
   virtual uint32_t GetTimestampIncrement(size_t pcm_byte_size) const = 0;
 };
 

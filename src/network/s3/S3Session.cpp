@@ -122,34 +122,49 @@ S3Session::WriteRequestAndReadHeaders(const std::string& file_key) {
 
 std::expected<std::pair<asio::stream_file, std::filesystem::path>, ErrorInfo>
 S3Session::PrepareLocalFile(const std::string& file_key) {
-  const std::filesystem::path local_dir = "downloads";
-  const auto filename = std::filesystem::path(file_key).filename();
-  std::filesystem::path local_path = local_dir / filename;
+const std::filesystem::path local_dir = "downloads";
+  auto filename = std::filesystem::path(file_key).filename();
+  auto local_path = local_dir / filename;
 
-  // Ensure directory exists
-  std::error_code dir_ec;
-  std::filesystem::create_directories(local_dir, dir_ec);
-  if (dir_ec) {
-    return std::unexpected(
-        ErrorInfo::From(AppError::FileSystemError,
-                        "Failed to create directory: " + dir_ec.message()));
-  }
 
-  // Open file with Truncate (overwrite) mode
-  asio::stream_file file(ioc_);
-  beast::error_code ec;
-  file.open(local_path.string(),
-            asio::stream_file::write_only | asio::stream_file::create |
-                asio::stream_file::truncate,
-            ec);
+  auto run_fs = [&](auto op, const std::string& msg) -> std::expected<void, ErrorInfo> {
+    std::error_code ec;
+    op(ec); // Execute the operation, filling 'ec'
+    if (ec) {
+      return std::unexpected(ErrorInfo::From(
+          AppError::FileSystemError, msg + ": " + ec.message()));
+    }
+    return {};
+  };
 
-  if (ec) {
-    return std::unexpected(
-        ErrorInfo::From(AppError::FileSystemError,
-                        "Failed to open local file: " + local_path.string()));
-  }
 
-  return std::make_pair(std::move(file), std::move(local_path));
+  return run_fs([&](std::error_code& ec) {
+           std::filesystem::create_directories(local_dir, ec);
+         }, "Failed to create directory")
+
+
+      .and_then([&]() -> std::expected<asio::stream_file, ErrorInfo> {
+         asio::stream_file file(ioc_);
+         boost::system::error_code ec;
+
+         file.open(local_path.string(), //NOLINT
+                   asio::stream_file::write_only |
+                   asio::stream_file::create |
+                   asio::stream_file::truncate,
+                   ec);
+
+         if (ec) {
+           return std::unexpected(ErrorInfo::From(
+               AppError::FileSystemError,
+               "Failed to open file: " + ec.message()));
+         }
+         return std::move(file);
+      })
+
+
+      .transform([&](auto file) {
+         return std::make_pair(std::move(file), std::move(local_path));
+      });
 }
 
 asio::awaitable<std::expected<size_t, ErrorInfo>>

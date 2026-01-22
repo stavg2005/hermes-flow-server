@@ -48,11 +48,10 @@ struct Node {
   NodeKind kind_;
   Node* target_ = nullptr;
 
-  // Execution State
-  int processed_frames_{0}; /**< Frames processed so far */
-  int total_frames_{0};     /**< Total frames this node will output */
-  int in_buffer_processed_frames_{
-      0}; /**< Frames processed in the current buffer */
+  // Execution State (Managed by AudioExecutor)
+  int processed_frames_{0};     /**< Number of 20ms frames processed so far */
+  int total_frames_{0};         /**< Total duration in 20ms frames (e.g. file size / frame_size) */
+  int in_buffer_processed_frames_{0}; /**< Offset within the current audio buffer (in frames) */
 
   explicit Node(Node* t = nullptr);
   virtual ~Node() = default;

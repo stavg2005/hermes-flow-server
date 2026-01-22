@@ -55,7 +55,7 @@ std::expected<void, NodeError> FileInputNode::Open() {
 std::expected<void, NodeError> FileInputNode::Close() {
   boost::system::error_code ec;
   file_handle_.close(ec);
-
+  
   if (ec) {
     return Error(NodeErrorCode::FileIOError, "Failed to close file {} {}: {}",
                  file_name_, file_path_, ec.message());

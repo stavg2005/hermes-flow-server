@@ -14,6 +14,7 @@
 #include "RTPStreamer.hpp"
 #include "Types.hpp"
 using namespace hermes::audio;
+using namespace hermes::config;
 namespace hermes::service {
 Session::Session(asio::io_context& io, std::string id, Graph&& g)
     : io_(io),
@@ -58,7 +59,6 @@ asio::awaitable<void> Session::Start() {
   spdlog::info("[{}] Starting session execution...", id_);
   is_running_ = true;
 
-
   if (!co_await InitializeGraphExecution()) {
     // InitializeGraphExecution already handled the logging/observer for the
     // error
@@ -76,31 +76,27 @@ asio::awaitable<void> Session::Start() {
   NodeError exit_reason;
   exit_reason.code = NodeErrorCode::Success;
 
-
   while (is_running_) {
     next_tick += std::chrono::milliseconds(20);
     timer_.expires_at(next_tick);
     try {
-    // If timer is cancelled, this will throw
-    co_await timer_.async_wait(asio::use_awaitable);
-  } catch (const boost::system::system_error& e) {
-    if (e.code() == boost::asio::error::operation_aborted) {
-      spdlog::debug("[{}] Timer cancelled, stopping loop.", id_);
-      break; // Exit the loop gracefully
+      // If timer is cancelled, this will throw
+      co_await timer_.async_wait(asio::use_awaitable);
+    } catch (const boost::system::system_error& e) {
+      if (e.code() == boost::asio::error::operation_aborted) {
+        spdlog::debug("[{}] Timer cancelled, stopping loop.", id_);
+        break;  // Exit the loop gracefully
+      }
+      throw;  // Rethrow real errors
     }
-    throw; // Rethrow real errors
-  }
-
 
     auto [executor_wants_continue, status] =
         audio_executor_->GetNextFrame(pcm_buffer);
-
 
     if (!IsStatusOk(status.code)) {
       exit_reason.code = status.code;
       break;  // Stop immediately on critical error
     }
-
 
     if (!executor_wants_continue) {
       // Natural finish (exit_reason remains Success)
@@ -177,4 +173,4 @@ void Session::UpdateStatsIfNeeded(
 bool Session::IsRunning() const { return is_running_; }
 
 Session::~Session() = default;
-}  // namespace hermese::service
+}  // namespace hermes::service

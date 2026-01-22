@@ -19,23 +19,23 @@
 #include "RTPPacketizer.hpp"
 #include "Types.hpp"
 
-using namespace hermes::config;
-using namespace hermes::audio;
-
 namespace hermes::net::rtp {
+namespace asio = boost::asio;
+using udp = asio::ip::udp;
 class RTPStreamer {
  public:
-  explicit RTPStreamer(asio::io_context& io)
-      : socket_(io, udp::endpoint(udp::v4(), 0)) {
-    codec_ = std::make_unique<ALawCodecStrategy>();
+  explicit RTPStreamer(boost::asio::io_context& io)
+      : socket_(io,
+                boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0)) {
+    codec_ = std::make_unique<audio::ALawCodecStrategy>();
     packetizer_ = std::make_unique<RTPPacketizer>(
         codec_->GetPayloadType(), generate_ssrc(),
-        codec_->GetTimestampIncrement(FRAME_SIZE_BYTES));
+        codec_->GetTimestampIncrement(config::FRAME_SIZE_BYTES));
   }
 
   void AddClient(const std::string& ip, uint16_t port) {
     boost::system::error_code ec;
-    auto addr = asio::ip::make_address(ip, ec);
+    auto addr = boost::asio::ip::make_address(ip, ec);
     if (ec) {
       spdlog::error("Invalid IP: {} - {}", ip, ec.message());
       return;
@@ -43,8 +43,7 @@ class RTPStreamer {
 
     udp::endpoint ep(addr, port);
 
-    // Avoid duplicates
-    if (std::find(clients_.begin(), clients_.end(), ep) == clients_.end()) {
+    if (!std::ranges::contains(clients_, ep)) {
       clients_.push_back(ep);
       spdlog::info("RTP Client added: {}:{}", ip, port);
     }
@@ -87,7 +86,7 @@ class RTPStreamer {
 
  private:
   std::unique_ptr<RTPPacketizer> packetizer_;
-  std::unique_ptr<ICodecStrategy> codec_;
+  std::unique_ptr<audio::ICodecStrategy> codec_;
 
   udp::socket socket_;
   std::vector<udp::endpoint> clients_;

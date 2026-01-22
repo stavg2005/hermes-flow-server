@@ -106,7 +106,7 @@ class Session : public std::enable_shared_from_this<Session> {
    * @return true ot alse If the session should continue or stop based on the
    * error
    */
-  bool IsStatusOk(NodeErrorCode status);
+  bool IsStatusOk(config::NodeErrorCode status);
 
   /**
    * @brief Sends updated statistics to the observer
@@ -118,7 +118,7 @@ class Session : public std::enable_shared_from_this<Session> {
   /**
    * @brief Handles the clean shutdown of a session.
    */
-  void FinalizeSession(const NodeError& result);
+  void FinalizeSession(const config::NodeError& result);
 
  private:
   asio::io_context& io_;

@@ -6,7 +6,7 @@
 #include "RTPPacketizer.hpp"
 #include "spdlog/spdlog.h"
 
-using namespace hermes::audio;
+
 /**
  * @brief Assembles RTP packets in-place (zero-copy) to avoid allocation.
  */
@@ -15,7 +15,7 @@ namespace hermes::net::rtp {
 static constexpr size_t RTP_HEADER_SIZE = 12;
 
 inline size_t packet2rtp(std::span<const uint8_t> pcmFrame,
-                         RTPPacketizer& packetizer, ICodecStrategy& codec,
+                         RTPPacketizer& packetizer, audio::ICodecStrategy& codec,
                          std::span<uint8_t> outBuffer) {
   if (outBuffer.size() < RTP_HEADER_SIZE) {
     std::cerr << "[PacketUtils] Buffer too small for header\n";

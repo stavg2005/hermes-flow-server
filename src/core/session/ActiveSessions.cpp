@@ -30,15 +30,13 @@ std::expected<std::string, ErrorInfo> ActiveSessions::CreateSession(
 
   boost::asio::io_context& io = pool_->get_io_context();
 
-  auto graph_result = parse_graph(io, jobj);
+  auto graph_result =
+      parse_graph(io, jobj).transform_error([session_id](const auto& err) {
+        spdlog::error("Failed to parse graph for session {}: {}", session_id,
+                      err.message);
+        return err;
+      });
 
-  if (!graph_result) {
-    spdlog::error("Failed to parse graph for session {}: {}", session_id,
-                  graph_result.error().message);
-    return std::unexpected(graph_result.error());
-  }
-
-  // Move the resulting graph object
   Graph g = std::move(*graph_result);
 
   spdlog::debug("Graph parsed for session {}. Node count: {}", session_id,
@@ -127,7 +125,6 @@ ActiveSessions::RemoveStatus ActiveSessions::RemoveSession(
 
     return RemoveStatus::Success;
   }
-
 
   // This is technically a success, but we report the detail.
   spdlog::warn("[{}] Audio removed, but WebSocket was missing.", id);

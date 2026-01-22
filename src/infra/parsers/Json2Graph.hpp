@@ -5,7 +5,7 @@
 #include "Nodes.hpp"
 #include "Types.hpp"
 
-using namespace hermes::audio;
+
 namespace hermes::infra {
 /**
  * @brief Parses a boost::json object into a Graph structure.

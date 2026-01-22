@@ -59,7 +59,7 @@ asio::awaitable<void> HttpSession::do_session() {
       parser_->body_limit(1024 * 1024 * 10);  // 10MB limit
       stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
 
-      
+
       auto read_result = co_await do_read_request();
 
       if (!read_result) {
@@ -67,6 +67,7 @@ asio::awaitable<void> HttpSession::do_session() {
         ResponseBuilder::build_error_response(
             err_res, "Invalid Request: " + read_result.error().message, 11,
             false, beast::http::status::bad_request);
+        //we specificly dont check for error here because if there is an error that means the client can no logner recive messeges  so i dosent matter
         co_await do_write_response(err_res);
 
         break;
@@ -75,7 +76,7 @@ asio::awaitable<void> HttpSession::do_session() {
       bool keep_alive = *read_result;
       const auto& req = parser_->get();
 
-      // 3. Handle WebSocket Upgrade
+      
       if (beast::websocket::is_upgrade(req)) {
         spdlog::info("Upgrading to WebSocket...");
 

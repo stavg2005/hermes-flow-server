@@ -19,44 +19,38 @@ namespace hermes::net {
 std::expected<std::shared_ptr<Listener>, ErrorInfo> Listener::Create(
     asio::io_context& main_ioc, std::shared_ptr<IoContextPool> pool,
     const tcp::endpoint& endpoint, std::shared_ptr<Router> router) {
-  beast::error_code ec;
-
   tcp::acceptor acceptor(main_ioc);
 
-  acceptor.open(endpoint.protocol(), ec);
-  if (ec) {
-    return std::unexpected(ErrorInfo::From(
-        AppError::NetworkError, "Listener Open Failed: " + ec.message()));
-  }
+  auto run_step = [&](auto operation, const std::string& err_msg) -> std::expected<void, ErrorInfo> {
+    beast::error_code ec;
+    operation(ec);
+    if (ec) {
+      return std::unexpected(ErrorInfo::From(AppError::NetworkError,
+                                             err_msg + ": " + ec.message()));
+    }
+    return {};
+  };
 
-  acceptor.set_option(asio::socket_base::reuse_address(true), ec);
-  if (ec) {
-    return std::unexpected(ErrorInfo::From(
-        AppError::NetworkError, "Listener SetOption Failed: " + ec.message()));
-  }
+  return run_step([&](auto& ec) { acceptor.open(endpoint.protocol(), ec); }, "Open Failed")
+      .and_then([&] {
+        return run_step([&](auto& ec) {
+           acceptor.set_option(asio::socket_base::reuse_address(true), ec);
+        }, "SetOption Failed");
+      })
+      .and_then([&] {
+        return run_step([&](auto& ec) { acceptor.bind(endpoint, ec); }, "Bind Failed");
+      })
+      .and_then([&] {
+        return run_step([&](auto& ec) {
+           acceptor.listen(asio::socket_base::max_listen_connections, ec);
+        }, "Listen Failed");
+      })
 
-  acceptor.bind(endpoint, ec);
-  if (ec) {
-    // This is the most common error (Port already in use)
-    return std::unexpected(ErrorInfo::From(
-        AppError::NetworkError,
-        "Listener Bind Failed (" + endpoint.address().to_string() + ":" +
-            std::to_string(endpoint.port()) + "): " + ec.message()));
-  }
-
-  acceptor.listen(asio::socket_base::max_listen_connections, ec);
-  if (ec) {
-    return std::unexpected(ErrorInfo::From(
-        AppError::NetworkError, "Listener Listen Failed: " + ec.message()));
-  }
-
-  spdlog::info("Listener successfully bound to {}:{}",
-               endpoint.address().to_string(), endpoint.port());
-
-  // 6. Create Instance (Move the ready acceptor into the object)
-  // Using 'new' to access private constructor
-  return std::shared_ptr<Listener>(new Listener(
-      main_ioc, std::move(pool), std::move(acceptor), std::move(router)));
+      .transform([&] {
+        spdlog::info("Listener bound to {}:{}", endpoint.address().to_string(), endpoint.port());
+        return std::shared_ptr<Listener>(new Listener(
+            main_ioc, std::move(pool), std::move(acceptor), std::move(router)));
+      });
 }
 
 Listener::Listener(asio::io_context& main_ioc,

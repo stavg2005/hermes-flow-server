@@ -31,6 +31,20 @@ static uint16_t get_encode_table_idx(const int16_t pcm_sample) {
 // The alaw algorithm requires signed bitwise operations.
 // NOLINTBEGIN(hicpp-signed-bitwise)
 
+/**
+ * @brief Generates a lookup table for linear PCM (16-bit) to A-Law (8-bit) conversion.
+ *
+ * A-Law allocates more dynamic range to smaller signals using a logarithmic curve.
+ * This function iterates through all possible 16-bit PCM values (-32768 to 32767),
+ * calculates the corresponding A-Law byte, and stores it in a lookup table.
+ *
+ * The algorithm involves:
+ * 1. Extracting the sign bit.
+ * 2. Determining the segment (chord) based on the sample magnitude.
+ * 3. Quantizing the bits within that segment.
+ * 4. Assembling the byte (Sign | Segment | Quantization).
+ * 5. XORing with 0x55 (standard A-Law pattern) to toggle even bits.
+ */
 static std::array<uint8_t, VALUE_COUNT_16BIT> make_encode_table() {
   // We're initializing the array with garbage values and populating it later
   // on. NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,
@@ -98,6 +112,15 @@ static std::array<uint8_t, VALUE_COUNT_16BIT> make_encode_table() {
   return encode_table;
 }
 
+/**
+ * @brief Generates a lookup table for A-Law (8-bit) to linear PCM (16-bit) conversion.
+ *
+ * This computes the expanded 16-bit sample for every possible 8-bit A-Law value.
+ * It essentially reverses the encoding process:
+ * 1. XOR with 0x55 to retrieve the "unmasked" byte.
+ * 2. Extract sign, segment, and quantization bits.
+ * 3. Expand the quantized value back to the 16-bit range using the segment shift.
+ */
 static std::array<uint16_t, VALUE_COUNT_U8BIT> make_decode_table() {
   // We're initializing the array with garbage values and populating it later
   // on.
@@ -142,6 +165,7 @@ static std::array<uint16_t, VALUE_COUNT_U8BIT> make_decode_table() {
 
 // NOLINTEND(hicpp-signed-bitwise)
 
+// Uses the pre-computed table for O(1) lookup per sample.
 void EncodeAlaw(boost::span<const int16_t> pcm, boost::span<uint8_t> alawOut) {
   // Ensure output span is large enough
   if (pcm.size() > alawOut.size()) {
@@ -156,6 +180,7 @@ void EncodeAlaw(boost::span<const int16_t> pcm, boost::span<uint8_t> alawOut) {
   }
 }
 
+// Uses the pre-computed table for O(1) lookup per sample.
 void DecodeAlaw(boost::span<const uint8_t> alaw, boost::span<int16_t> pcmOut) {
   // Ensure output span is large enough
   if (alaw.size() > pcmOut.size()) {

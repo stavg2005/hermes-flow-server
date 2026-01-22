@@ -146,8 +146,7 @@ std::pair<bool, config::NodeError> AudioExecutor::GetNextFrame(
     bool is_eos =
         (!result && result.error().code == config::NodeErrorCode::EndOfStream);
 
-    // Check total frames if applicable (AsyncAudioSource handles this
-    // internally mostly, but the node base class still tracks it)
+
     bool limit_reached =
         (current_node_->processed_frames_ >= current_node_->total_frames_) &&
         (current_node_->total_frames_ > 0);

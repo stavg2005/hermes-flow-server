@@ -41,44 +41,46 @@ Router::Router(std::shared_ptr<ActiveSessions> active,
 
 void Router::RouteQuery(const req_t& req, res_t& res,
                         boost::beast::tcp_stream& stream) {
-  // We maintain one try-catch ONLY for truly unexpected crashes (like
-  // std::bad_alloc) All logic errors are now handled via values.
+  // We maintain one try-catch ONLY for truly unexpected crashes
   try {
     boost::urls::url_view url{req.target()};
     std::string path{url.path()};
 
-    std::expected<void, RouteError> result;
+    auto match_route =
+        [&](std::string_view prefix, beast::http::verb method,
+            auto handler) -> std::optional<std::expected<void, RouteError>> {
+      if (!path.starts_with(prefix))
+        return std::nullopt;
 
-    if (path.starts_with("/transmit/")) {
-      if (req.method() != beast::http::verb::post) {
-        result = std::unexpected(RouteError{beast::http::status::method_not_allowed,
-                                            "Method must be POST"});
-      } else {
-        result = handle_transmit(req, res);
+      if (req.method() != method) {
+        return std::unexpected(RouteError{
+            beast::http::status::method_not_allowed,
+            "Method must be " + std::string(beast::http::to_string(method))});
       }
-    } else if (path.starts_with("/connect/")) {
-      if (req.method() != beast::http::verb::get) {
-        result = std::unexpected(
-            RouteError{beast::http::status::method_not_allowed, "Method must be GET"});
-      } else {
-        result = handle_websocket_request(req, res, stream);
-      }
-    } else if (path.starts_with("/stop/")) {
-      if (req.method() != beast::http::verb::post) {
-        result = std::unexpected(RouteError{beast::http::status::method_not_allowed,
-                                            "Method must be POST"});
-      } else {
-        result = handle_stop(req, res);
-      }
-    } else {
-      // Path doesn't exist
-      result = std::unexpected(
-          RouteError{beast::http::status::not_found, "Route not found"});
-    }
+      return handler();
+    };
+
+    auto result_opt =
+        match_route("/transmit/", beast::http::verb::post,
+                    [&] { return handle_transmit(req, res); })
+            .or_else([&] {
+              return match_route("/connect/", beast::http::verb::get, [&] {
+                return handle_websocket_request(req, res, stream);
+              });
+            })
+            .or_else([&] {
+              return match_route("/stop/", beast::http::verb::post,
+                                 [&] { return handle_stop(req, res); });
+            });
+
+
+    auto result = result_opt.value_or(std::unexpected(
+        RouteError{beast::http::status::not_found, "Route not found"}));
+
 
     if (!result) {
       auto err = result.error();
-      spdlog::warn("API Error: {} - {}", static_cast<int>(err.code),
+      spdlog::warn("API Error: {} - {}", std::to_underlying(err.code),
                    err.message);
       ResponseBuilder::build_error_response(res, err.message, req.version(),
                                             req.keep_alive(), err.code);
@@ -104,8 +106,8 @@ std::expected<void, RouteError> Router::handle_transmit(const req_t& req,
         RouteError{beast::http::status::bad_request, "Invalid JSON format"});
   }
   if (!jv.is_object()) {
-    return std::unexpected(
-        RouteError{beast::http::status::bad_request, "JSON root must be an object"});
+    return std::unexpected(RouteError{beast::http::status::bad_request,
+                                      "JSON root must be an object"});
   }
 
   auto result = active_->CreateSession(jv.as_object());
@@ -124,10 +126,9 @@ std::expected<void, RouteError> Router::handle_stop(const req_t& req,
   boost::urls::url_view url{req.target()};
   auto params = url.params();
   auto it = params.find("id");
-
   if (it == params.end()) {
-    return std::unexpected(
-        RouteError{beast::http::status::bad_request, "Missing query parameter: id"});
+    return std::unexpected(RouteError{beast::http::status::bad_request,
+                                      "Missing query parameter: id"});
   }
 
   std::string id((*it)->value);
@@ -160,8 +161,8 @@ std::expected<void, RouteError> Router::handle_websocket_request(
   auto it = params.find("id");
 
   if (it == params.end()) {
-    return std::unexpected(
-        RouteError{beast::http::status::bad_request, "Missing query parameter: id"});
+    return std::unexpected(RouteError{beast::http::status::bad_request,
+                                      "Missing query parameter: id"});
   }
 
   std::string id((*it)->value);
@@ -176,4 +177,4 @@ std::expected<void, RouteError> Router::handle_websocket_request(
 
   return {};
 }
-}  // namespace hermes::net
+}  // namespace hermes::net::http
