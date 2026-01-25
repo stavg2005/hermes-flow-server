@@ -7,7 +7,7 @@
 
 using namespace hermes::config;
 namespace hermes::infra {
-std::expected<std::shared_ptr<IoContextPool>, ErrorInfo> IoContextPool::Create(
+std::expected<std::shared_ptr<IoContextPool>, ErrorInfo> IoContextPool::create(
     std::size_t pool_size) {
   if (pool_size == 0) {
     return std::unexpected(ErrorInfo::From(AppError::ConfigError,

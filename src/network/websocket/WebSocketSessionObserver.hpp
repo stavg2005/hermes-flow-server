@@ -17,7 +17,7 @@ class WebSocketSessionObserver : public ISessionObserver {
   explicit WebSocketSessionObserver(std::shared_ptr<WebSocketSession> ws)
       : ws_(ws) {}
 
-  void OnStatsUpdate(const SessionStats& stats) override {
+  void on_stats_update(const SessionStats& stats) override {
     if (auto session = ws_.lock()) {
       boost::json::object j;
       j["type"] = "stats";
@@ -28,8 +28,8 @@ class WebSocketSessionObserver : public ISessionObserver {
     }
   }
 
-  void OnNodeTransition(const std::string& id) override { /* ... */ }
-  void OnSessionComplete() override {
+  void on_node_transition(const std::string& id) override { /* ... */ }
+  void on_session_complete() override {
     if (auto session = ws_.lock()) {
       boost::json::object j;
       j["type"] = "completion";
@@ -37,7 +37,7 @@ class WebSocketSessionObserver : public ISessionObserver {
       session->send(boost::json::serialize(j));
     }
   }
-  void OnError(const std::string& error_message) override {
+  void on_error(const std::string& error_message) override {
     if (auto session = ws_.lock()) {
       boost::json::object j;
       j["type"] = "error";

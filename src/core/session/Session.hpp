@@ -50,13 +50,13 @@ class Session : public std::enable_shared_from_this<Session> {
    * Configures the streamer.
    * Enters the main loop, ticking every 20ms to process frames.
    */
-  boost::asio::awaitable<void> Start();
+  boost::asio::awaitable<void> start();
 
   /**
    * @brief Stops the session execution immediately.
    *
    */
-  void Stop();
+  void stop();
 
   /**
    * @brief Adds a target client for RTP streaming.
@@ -64,7 +64,7 @@ class Session : public std::enable_shared_from_this<Session> {
    * @param ip The target IP address.
    * @param port The target UDP port.
    */
-  void AddClient(const std::string& ip, uint16_t port);
+  void add_client(const std::string& ip, uint16_t port);
 
   /**
    * @brief Attaches an observer to receive session events.
@@ -72,19 +72,19 @@ class Session : public std::enable_shared_from_this<Session> {
    * @param observer Shared pointer to an ISessionObserver (e.g.,
    * WebSocketSession).
    */
-  void AttachObserver(std::shared_ptr<ISessionObserver> observer);
+  void attach_observer(std::shared_ptr<ISessionObserver> observer);
 
   /**
    * @brief Checks if the session is currently running.
    * @return true if running, false otherwise.
    */
-  bool IsRunning() const;
+  bool is_running() const;
 
   /**
    * @brief Scans the graph for 'ClientsNode' and registers them with the
    * RTPStreamer.
    */
-  void ConfigureStreamerFromGraph();
+  void configure_streamer_from_graph();
 
   /**
    * @brief Prepares the audio graph for execution asynchronously.
@@ -94,7 +94,7 @@ class Session : public std::enable_shared_from_this<Session> {
    *
    * @return true or false if it failed
    */
-  boost::asio::awaitable<bool> InitializeGraphExecution();
+  boost::asio::awaitable<bool> initialize_graph_execution();
 
   /**
    * @brief Evaluates the status returned by the AudioExecutor after processing
@@ -106,19 +106,19 @@ class Session : public std::enable_shared_from_this<Session> {
    * @return true ot alse If the session should continue or stop based on the
    * error
    */
-  bool IsStatusOk(config::NodeErrorCode status);
+  bool is_status_ok(config::NodeErrorCode status);
 
   /**
    * @brief Sends updated statistics to the observer
    * @param last_stats_time  the timestamp of the last update.
    */
-  void UpdateStatsIfNeeded(
+  void update_stats_if_needed(
       std::chrono::steady_clock::time_point& last_stats_time);
 
   /**
    * @brief Handles the clean shutdown of a session.
    */
-  void FinalizeSession(const config::NodeError& result);
+  void finalize_session(const config::NodeError& result);
 
  private:
   asio::io_context& io_;

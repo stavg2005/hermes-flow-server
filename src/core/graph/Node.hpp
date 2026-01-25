@@ -21,11 +21,11 @@ enum class NodeKind { FileInput, Mixer, Delay, Clients, FileOptions };
  */
 struct IAudioProcessor {
   /** @brief Process the next audio frame into the provided buffer. */
-  virtual std::expected<void, config::NodeError> ProcessFrame(
+  virtual std::expected<void, config::NodeError> process_frame(
       std::span<uint8_t> frame_buffer) = 0;
 
   /** @brief Release resources and reset node state. */
-  virtual std::expected<void, config::NodeError> Close() = 0;
+  virtual std::expected<void, config::NodeError> close() = 0;
 
   virtual ~IAudioProcessor() = default;
 };
@@ -34,53 +34,48 @@ struct IAudioProcessor {
  * @brief Interface for nodes that need async initialization.
  */
 struct IAsyncInitializer {
-  virtual boost::asio::awaitable<void> InitializeBuffers() = 0;
+  virtual boost::asio::awaitable<void> initialize_buffers() = 0;
   virtual ~IAsyncInitializer() = default;
 };
 
 // Base Node
-
-/**
- * @brief Base class for all nodes in the audio graph
- * Holds execution state and links to the next node.
- */
 struct Node : public std::enable_shared_from_this<Node> {
  public:
   explicit Node(Node* next = nullptr);
   virtual ~Node() = default;
 
-  [[nodiscard]] std::string_view Id() const { return id_; }
-  [[nodiscard]] NodeKind Kind() const { return kind_; }
+  [[nodiscard]] std::string_view id() const { return id_; }
+  [[nodiscard]] NodeKind kind() const { return kind_; }
 
-  [[nodiscard]] std::shared_ptr<Node> Next() const { return target_.lock(); }
-  void SetNext(std::shared_ptr<Node> target) {
+  [[nodiscard]] std::shared_ptr<Node> next() const { return target_.lock(); }
+  void set_next(std::shared_ptr<Node> target) {
     target_ = target;
   }  // Explicit rewiring
 
-  int GetTotalFrames() const { return total_frames_; }
-  void SetTotalFreames(int frames) { total_frames_ = frames; }
+  int get_total_frames() const { return total_frames_; }
+  void set_total_frames(int frames) { total_frames_ = frames; }
 
-  void SetId(std::string id) { id_ = std::move(id); }
+  void set_id(std::string id) { id_ = std::move(id); }
 
-  [[nodiscard]] bool IsComplete() const {
+  [[nodiscard]] bool is_complete() const {
     return (total_frames_ > 0) && (processed_frames_ >= total_frames_);
   }
 
   /** * @brief Resets counters. Essential for re-using the graph.
    */
-  virtual void ResetState() {
+  virtual void reset_state() {
     processed_frames_ = 0;
     in_buffer_processed_frames_ = 0;
   }
 
   // --- 3. Polymorphic Interfaces ---
-  virtual IAudioProcessor* AsAudio();
-  virtual std::expected<void, config::NodeError> ConnectInput(
+  virtual IAudioProcessor* as_audio();
+  virtual std::expected<void, config::NodeError> connect_input(
       std::shared_ptr<Node> source);
-  void WireStandard(std::shared_ptr<Node> source);
+  void wire_standard(std::shared_ptr<Node> source);
 
  protected:
-  // Protected: Subclasses (Mixer, FileInput) need direct access for
+  // Protected: Subclasses (Mixer, FileInput) needs direct access for
   // performance
   std::string id_;
   NodeKind kind_;
@@ -92,7 +87,7 @@ struct Node : public std::enable_shared_from_this<Node> {
 
   // Helper for error logging
   template <typename... Args>
-  std::unexpected<config::NodeError> Error(config::NodeErrorCode code,
+  std::unexpected<config::NodeError> error(config::NodeErrorCode code,
                                            std::format_string<Args...> fmt,
                                            Args&&... args) const {
     // ... implementation same as before ...

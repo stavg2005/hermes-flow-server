@@ -8,10 +8,10 @@
 using namespace hermes::service;
 using namespace hermes::net::http;
 namespace hermes::net {
-std::expected<std::shared_ptr<Server>, ErrorInfo> Server::Create(
+std::expected<std::shared_ptr<Server>, ErrorInfo> Server::create(
     boost::asio::io_context& main_ioc, const std::string& address,
     const std::string& port, unsigned int threads) {
-  auto pool_result = IoContextPool::Create(threads);
+  auto pool_result = IoContextPool::create(threads);
   if (!pool_result) {
     return std::unexpected(pool_result.error());
   }
@@ -31,7 +31,7 @@ std::expected<std::shared_ptr<Server>, ErrorInfo> Server::Create(
                         "Invalid Address/Port: " + std::string(e.what())));
   }
 
-  auto listener_result = Listener::Create(main_ioc, pool, endpoint, router);
+  auto listener_result = Listener::create(main_ioc, pool, endpoint, router);
   if (!listener_result) {
     return std::unexpected(listener_result.error());
   }
@@ -56,13 +56,13 @@ Server::Server(boost::asio::io_context& main_ioc,
       router_(std::move(router)),
       listener_(std::move(listener)) {}
 
-void Server::Start() {
+void Server::start() {
   pool_->run();
   listener_->run();
   main_io_.run();
 }
 
-void Server::Stop() {
+void Server::stop() {
   spdlog::info("Stopping server components...");
   pool_->stop();
   main_io_.stop();

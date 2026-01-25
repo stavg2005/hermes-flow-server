@@ -39,7 +39,7 @@ Router::Router(std::shared_ptr<ActiveSessions> active,
                std::shared_ptr<IoContextPool> pool)
     : active_(std::move(active)), pool_(std::move(pool)) {}
 
-void Router::RouteQuery(const req_t& req, res_t& res,
+void Router::route_query(const req_t& req, res_t& res,
                         boost::beast::tcp_stream& stream) {
   // We maintain one try-catch ONLY for truly unexpected crashes
   try {
@@ -110,7 +110,7 @@ std::expected<void, RouteError> Router::handle_transmit(const req_t& req,
                                       "JSON root must be an object"});
   }
 
-  auto result = active_->CreateSession(jv.as_object());
+  auto result = active_->create_session(jv.as_object());
 
   if (!result) {
     return std::unexpected(
@@ -132,7 +132,7 @@ std::expected<void, RouteError> Router::handle_stop(const req_t& req,
   }
 
   std::string id((*it)->value);
-  auto status = active_->RemoveSession(id);
+  auto status = active_->remove_session(id);
 
   using enum ActiveSessions::RemoveStatus;
 
@@ -168,7 +168,7 @@ std::expected<void, RouteError> Router::handle_websocket_request(
   std::string id((*it)->value);
   spdlog::info("Attaching WebSocket to session: {}", id);
 
-  auto result = active_->CreateAndRunWebsocketSession(id, req, stream);
+  auto result = active_->create_and_run_websocket_session(id, req, stream);
 
   if (!result) {
     return std::unexpected(

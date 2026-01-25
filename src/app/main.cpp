@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
   try {
     SetupLogging();
 
-    auto cfg_result = LoadConfig("../config.toml");
+    auto cfg_result = load_config("../config.toml");
 
     if (!cfg_result) {
       spdlog::critical("Failed to load configuration: {}",
@@ -64,11 +64,11 @@ int main(int argc, char* argv[]) {
 
     auto cfg = std::move(*cfg_result);
 
-     hermes::audio::RegisterBuiltinNodes();
+     hermes::audio::register_builtin_nodes();
 
     asio::io_context main_ioc;
     auto server_result =
-        Server::Create(main_ioc, cfg.server.address,
+        Server::create(main_ioc, cfg.server.address,
                        std::to_string(cfg.server.port), cfg.server.threads);
 
     if (!server_result) {
@@ -83,13 +83,13 @@ int main(int argc, char* argv[]) {
         [&server](const boost::system::error_code&, int signal_number) {
           spdlog::info("Stop signal ({}) received. Shutting down...",
                        signal_number);
-          server->Stop();
+          server->stop();
         });
 
     spdlog::info("Hermes Flow Server starting on {}:{}", cfg.server.address,
                  cfg.server.port);
 
-    server->Start();
+    server->start();
 
     spdlog::info("Server shutdown complete.");
 

@@ -14,7 +14,7 @@ class BufferPool {
  public:
   using BufferPtr = std::shared_ptr<std::vector<uint8_t>>;
 
-  static BufferPool& Instance(size_t initial_count = 8,
+  static BufferPool& instance(size_t initial_count = 8,
                               size_t buffer_size = 512 * 1024) {
     static BufferPool instance(initial_count, buffer_size);
     return instance;
@@ -26,7 +26,7 @@ class BufferPool {
    * @param size Requested buffer size (ignored if pre-allocated buffers are
    * large enough)
    */
-  BufferPtr Acquire(size_t size = 512 * 1024) {
+  BufferPtr acquire(size_t size = 512 * 1024) {
     std::lock_guard<std::mutex> lock(mutex_);
     std::unique_ptr<std::vector<uint8_t>> raw_ptr;
 
@@ -45,7 +45,7 @@ class BufferPool {
     }
 
     return BufferPtr(raw_ptr.release(),
-                     [this](std::vector<uint8_t>* p) { Release(p); });
+                     [this](std::vector<uint8_t>* p) { release(p); });
   }
 
  private:
@@ -61,11 +61,10 @@ class BufferPool {
   ~BufferPool() {
     while (!pool_.empty()) {
       pool_.pop();
-      pool_.pop();
     }
   }
 
-  void Release(std::vector<uint8_t>* p) {
+  void release(std::vector<uint8_t>* p) {
     if (!p) return;
     std::lock_guard<std::mutex> lock(mutex_);
     pool_.push(std::unique_ptr<std::vector<uint8_t>>(p));

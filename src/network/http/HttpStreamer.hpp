@@ -29,14 +29,14 @@ public:
 
     template <typename Body, typename Fields, config::AsyncWriteStream Sink>
     asio::awaitable<std::expected<void, config::ErrorInfo>>
-    Execute(const std::string& host,
+    execute(const std::string& host,
             const std::string& port,
             http::request<Body, Fields> req,
             Sink& destination) {
 
 
         stream_.expires_after(std::chrono::seconds(30));
-        auto connect_res = co_await Connect(host, port);
+        auto connect_res = co_await connect(host, port);
         if (!connect_res) co_return std::unexpected(connect_res.error());
 
 
@@ -52,15 +52,15 @@ public:
 
 
         if (parser.get().result() != http::status::ok) {
-            co_return co_await HandleErrorResponse(std::move(parser), buffer);
+            co_return co_await handle_error_response(std::move(parser), buffer);
         }
 
 
-        auto expected_size = GetContentLength(parser.get());
+        auto expected_size = get_content_length(parser.get());
 
 
         stream_.expires_never();
-        co_return co_await StreamToSink(destination, buffer, expected_size);
+        co_return co_await stream_to_sink(destination, buffer, expected_size);
     }
 
 private:
@@ -68,7 +68,7 @@ private:
     tcp::resolver resolver_;
     beast::tcp_stream stream_;
 
-    asio::awaitable<std::expected<void, config::ErrorInfo>> Connect(const std::string& host, const std::string& port) {
+    asio::awaitable<std::expected<void, config::ErrorInfo>> connect(const std::string& host, const std::string& port) {
         try {
             auto results = co_await resolver_.async_resolve(host, port, asio::use_awaitable);
             co_await stream_.async_connect(results, asio::use_awaitable);
@@ -79,7 +79,7 @@ private:
     }
 
     template <typename Parser>
-    asio::awaitable<std::unexpected<config::ErrorInfo>> HandleErrorResponse(Parser&& parser, beast::flat_buffer& buffer) {
+    asio::awaitable<std::unexpected<config::ErrorInfo>> handle_error_response(Parser&& parser, beast::flat_buffer& buffer) {
         // Drain the rest of the body to get the error message
         http::response_parser<http::string_body> error_parser(std::move(parser));
         co_await http::async_read(stream_, buffer, error_parser, asio::use_awaitable);
@@ -92,7 +92,7 @@ private:
             "HTTP Error " + std::to_string(status) + ": " + error_body));
     }
 
-    size_t GetContentLength(const http::response_header<>& header) {
+    size_t get_content_length(const http::response_header<>& header) {
         if (auto it = header.find(http::field::content_length); it != header.end()) {
             return std::stoull(std::string(it->value()));
         }
@@ -101,7 +101,7 @@ private:
 
     template <config::AsyncWriteStream Sink>
     asio::awaitable<std::expected<void, config::ErrorInfo>>
-    StreamToSink(Sink& sink, beast::flat_buffer& buffer, size_t expected_size) {
+    stream_to_sink(Sink& sink, beast::flat_buffer& buffer, size_t expected_size) {
         size_t total_written = 0;
 
         // Write whatever was already read into the buffer during header parsing
@@ -110,7 +110,7 @@ private:
             buffer.consume(buffer.size());
         }
 
-        auto shared_buf = infra::BufferPool::Instance().Acquire(512 * 1024);
+        auto shared_buf = infra::BufferPool::instance().acquire(512 * 1024);
 
         while (true) {
             size_t bytes_read = 0;

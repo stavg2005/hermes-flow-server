@@ -27,46 +27,46 @@ Session::Session(asio::io_context& io, std::string id, Graph&& g)
   spdlog::debug("Session [{}] created.", id_);
 }
 
-void Session::AttachObserver(std::shared_ptr<ISessionObserver> observer) {
+void Session::attach_observer(std::shared_ptr<ISessionObserver> observer) {
   observer_ = std::move(observer);
   spdlog::info("[{}] Observer attached.", id_);
 }
 
-void Session::AddClient(const std::string& ip, uint16_t port) {
-  streamer_->AddClient(ip, port);
+void Session::add_client(const std::string& ip, uint16_t port) {
+  streamer_->add_client(ip, port);
 }
 
-void Session::Stop() {
+void Session::stop() {
   spdlog::info("[{}] Stopping session...", id_);
   is_running_ = false;
 
   timer_.cancel();
 }
 
-void Session::ConfigureStreamerFromGraph() {
+void Session::configure_streamer_from_graph() {
   for (const auto& node : graph_->nodes) {
-    if (node->Kind() == NodeKind::Clients) {
+    if (node->kind() == NodeKind::Clients) {
       auto* clientsNode = static_cast<ClientsNode*>(node.get());
 
       for (const auto& [ip, port] : clientsNode->clients) {
         spdlog::info("[{}] Auto-registering client: {}:{}", id_, ip, port);
-        streamer_->AddClient(ip, port);
+        streamer_->add_client(ip, port);
       }
     }
   }
 }
-asio::awaitable<void> Session::Start() {
+asio::awaitable<void> Session::start() {
   spdlog::info("[{}] Starting session execution...", id_);
   is_running_ = true;
 
-  if (!co_await InitializeGraphExecution()) {
+  if (!co_await initialize_graph_execution()) {
     // InitializeGraphExecution already handled the logging/observer for the
     // error
-    Stop();
+    stop();
     co_return;
   }
 
-  ConfigureStreamerFromGraph();
+  configure_streamer_from_graph();
 
   auto next_tick = std::chrono::steady_clock::now();
   auto last_stats_time = std::chrono::steady_clock::now();
@@ -91,9 +91,9 @@ asio::awaitable<void> Session::Start() {
     }
 
     auto [executor_wants_continue, status] =
-        audio_executor_->GetNextFrame(pcm_buffer);
+        audio_executor_->get_next_frame(pcm_buffer);
 
-    if (!IsStatusOk(status.code)) {
+    if (!is_status_ok(status.code)) {
       exit_reason.code = status.code;
       break;  // Stop immediately on critical error
     }
@@ -103,30 +103,30 @@ asio::awaitable<void> Session::Start() {
       break;
     }
 
-    streamer_->SendFrame(pcm_buffer);
-    UpdateStatsIfNeeded(last_stats_time);
+    streamer_->send_frame(pcm_buffer);
+    update_stats_if_needed(last_stats_time);
   }
 
   is_running_ = false;
 
-  FinalizeSession(exit_reason);
+  finalize_session(exit_reason);
 }
 
-asio::awaitable<bool> Session::InitializeGraphExecution() {
-  auto prepare_result = co_await audio_executor_->Prepare();
+asio::awaitable<bool> Session::initialize_graph_execution() {
+  auto prepare_result = co_await audio_executor_->prepare();
 
   if (!prepare_result) {
     auto err = prepare_result.error();
     spdlog::error("[{}] Audio preparation failed: {}", id_, err.message);
     if (observer_) {
-      observer_->OnError("Prep Failed: " + err.message);
+      observer_->on_error("Prep Failed: " + err.message);
     }
     co_return false;
   }
   co_return true;
 }
 
-bool Session::IsStatusOk(NodeErrorCode code) {
+bool Session::is_status_ok(NodeErrorCode code) {
   if (code == NodeErrorCode::Success) return true;
 
   // Warnings / Info (Non-breaking)
@@ -147,30 +147,30 @@ bool Session::IsStatusOk(NodeErrorCode code) {
   return false;
 }
 
-void Session::FinalizeSession(const NodeError& result) {
+void Session::finalize_session(const NodeError& result) {
   if (!observer_) return;
 
   if (result.code != NodeErrorCode::Success) {
     spdlog::error("[{}] Session ended with error: {}", id_, result.message);
-    observer_->OnError(result.message);
+    observer_->on_error(result.message);
   } else {
     spdlog::info("[{}] Session finished successfully.", id_);
-    observer_->OnSessionComplete();
+    observer_->on_session_complete();
   }
 }
 
-void Session::UpdateStatsIfNeeded(
+void Session::update_stats_if_needed(
     std::chrono::steady_clock::time_point& last_stats_time) {
   if (!observer_) return;
 
   auto now = std::chrono::steady_clock::now();
   if (now - last_stats_time > std::chrono::milliseconds(100)) {
-    observer_->OnStatsUpdate(audio_executor_->GetStats());
+    observer_->on_stats_update(audio_executor_->get_stats());
     last_stats_time = now;
   }
 }
 
-bool Session::IsRunning() const { return is_running_; }
+bool Session::is_running() const { return is_running_; }
 
 Session::~Session() = default;
 }  // namespace hermes::service

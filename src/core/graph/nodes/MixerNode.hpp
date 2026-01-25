@@ -17,15 +17,15 @@ struct MixerNode : Node, IAudioProcessor {
   explicit MixerNode(Node* t = nullptr);
 
   // Overrides
-  IAudioProcessor* AsAudio() override;
-  std::expected<void, config::NodeError> ProcessFrame(
+  IAudioProcessor* as_audio() override;
+  std::expected<void, config::NodeError> process_frame(
       std::span<uint8_t> frame_buffer) override;
-  std::expected<void, config::NodeError> Close() override;
+  std::expected<void, config::NodeError> close() override;
 
-  virtual std::expected<void, config::NodeError> ConnectInput(
+  virtual std::expected<void, config::NodeError> connect_input(
       std::shared_ptr<Node> source) override;
   // Specific Methods
-  void SetMaxFrames();
-  void AddInput(FileInputNode* node);
+  void set_max_frames();
+  void add_input(FileInputNode* node);
 };
 }  // namespace hermes::audio

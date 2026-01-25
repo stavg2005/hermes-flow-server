@@ -18,11 +18,11 @@ struct ICodecStrategy {
    * @param out_buffer Destination buffer for encoded bytes.
    * @return Number of bytes written to out_buffer.
    */
-  virtual size_t Encode(std::span<const uint8_t> pcm,
+  virtual size_t encode(std::span<const uint8_t> pcm,
                         std::span<uint8_t> out_buffer) = 0;
 
   // Metadata required by RTP Packetizer
-  virtual uint8_t GetPayloadType() const = 0;
+  virtual uint8_t get_payload_type() const = 0;
 
   /**
    * @brief Calculates the RTP timestamp increment for a given PCM chunk.
@@ -32,11 +32,11 @@ struct ICodecStrategy {
    *
    * @param pcm_byte_size Size of the raw PCM input in bytes.
    */
-  virtual uint32_t GetTimestampIncrement(size_t pcm_byte_size) const = 0;
+  virtual uint32_t get_timestamp_increment(size_t pcm_byte_size) const = 0;
 };
 
 struct ALawCodecStrategy : ICodecStrategy {
-  size_t Encode(std::span<const uint8_t> pcm,
+  size_t encode(std::span<const uint8_t> pcm,
                 std::span<uint8_t> out_buffer) override {
     const size_t sample_count = pcm.size() / sizeof(int16_t);
 
@@ -47,16 +47,16 @@ struct ALawCodecStrategy : ICodecStrategy {
     auto samples = std::span<const int16_t>(
         reinterpret_cast<const int16_t*>(pcm.data()), sample_count);
 
-    EncodeAlaw(samples, out_buffer);
+    encode_alaw(samples, out_buffer);
 
     return sample_count;  // A-Law is 1 byte per sample
   }
 
-  uint8_t GetPayloadType() const override {
+  uint8_t get_payload_type() const override {
     return 8;  // PCMA
   }
 
-  uint32_t GetTimestampIncrement(size_t pcm_byte_size) const override {
+  uint32_t get_timestamp_increment(size_t pcm_byte_size) const override {
     // For A-Law/PCM, 1 sample = 1 timestamp tick
     return static_cast<uint32_t>(pcm_byte_size / sizeof(int16_t));
   }

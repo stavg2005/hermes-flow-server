@@ -21,7 +21,7 @@ namespace hermes::infra {
  */
 class IoContextPool {
  public:
-  static std::expected<std::shared_ptr<IoContextPool>, config::ErrorInfo> Create(
+  static std::expected<std::shared_ptr<IoContextPool>, config::ErrorInfo> create(
       std::size_t pool_size);
 
   // Destructor. Stops and joins all threads.

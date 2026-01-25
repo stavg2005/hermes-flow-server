@@ -31,34 +31,34 @@ struct FileInputNode : public AsyncAudioSource {
 
   // --- AsyncAudioSource Implementations ---
 
-  virtual std::expected<void, config::NodeError> ConnectInput(
+  virtual std::expected<void, config::NodeError> connect_input(
       std::shared_ptr<Node> source) override;
 
   /**
    * @brief The ONE thing this class must do: fetch bytes from disk.
    * AsyncAudioSource handles the double-buffering logic automatically.
    */
-  boost::asio::awaitable<size_t> FetchBytes(std::span<uint8_t> dest) override;
+  boost::asio::awaitable<size_t> fetch_bytes(std::span<uint8_t> dest) override;
 
   /**
    * @brief Optional override to apply gain/options after data is ready.
    */
-  void ApplyEffects(std::span<uint8_t> frame_buffer) override;
+  void apply_effects(std::span<uint8_t> frame_buffer) override;
 
   /**
    * @brief Override to handle WAV header skipping on the first buffer.
    */
-  size_t GetReadOffset(std::span<uint8_t> buffer) override;
+  size_t get_read_offset(std::span<uint8_t> buffer) override;
 
   // --- Lifecycle Overrides ---
 
-  std::expected<void, config::NodeError> Open();
-  std::expected<void, config::NodeError> Close() override;
+  std::expected<void, config::NodeError> open();
+  std::expected<void, config::NodeError> close() override;
 
   /**
    * @brief Link the options node (Gain).
    */
-  void SetOptions(std::shared_ptr<FileOptionsNode> options_node);
+  void set_options(std::shared_ptr<FileOptionsNode> options_node);
 };
 
 }  // namespace hermes::audio

@@ -12,9 +12,9 @@ struct ClientsNode : Node {
 
   explicit ClientsNode(Node* t = nullptr);
 
-  void AddClient(std::string ip, uint16_t port);
+  void add_client(std::string ip, uint16_t port);
 
-  virtual std::expected<void, config::NodeError> ConnectInput(
+  virtual std::expected<void, config::NodeError> connect_input(
       std::shared_ptr<Node> source) override;
 };
 }  // namespace hermes::audio

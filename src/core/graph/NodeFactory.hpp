@@ -31,7 +31,7 @@ concept IsNodeCreator = requires(F f, boost::asio::io_context& io,
  */
 class NodeFactory {
  public:
-  static NodeFactory& Instance() {
+  static NodeFactory& instance() {
     static NodeFactory instance;
     return instance;
   }
@@ -43,13 +43,13 @@ class NodeFactory {
    */
   template <typename Creator>
     requires IsNodeCreator<Creator>
-  void Register(const std::string& type, Creator&& creator) {
+  void register_creator(const std::string& type, Creator&& creator) {
     // We still store it as std::function (type erasure), but we've verified it
     // works
     creators_[type] = std::forward<Creator>(creator);
   }
 
-  std::expected<std::shared_ptr<Node>, config::ErrorInfo> Create(
+  std::expected<std::shared_ptr<Node>, config::ErrorInfo> create(
       const std::string& type, boost::asio::io_context& io,
       const boost::json::object& data) {
     auto it = creators_.find(type);

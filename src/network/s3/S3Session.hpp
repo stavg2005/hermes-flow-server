@@ -27,7 +27,7 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
  public:
   // Factory Method (Loads config if not provided)
   static std::expected<std::shared_ptr<S3Session>, hermes::config::ErrorInfo>
-  Create(boost::asio::io_context& ioc,
+  create(boost::asio::io_context& ioc,
          const hermes::config::S3Config& manual_cfg = {});
 
   /**
@@ -38,7 +38,7 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
    */
   template <config::AsyncWriteStream Sink>
   boost::asio::awaitable<std::expected<void, hermes::config::ErrorInfo>>
-  RequestFile(const std::string& file_key, Sink& destination) {
+  request_file(const std::string& file_key, Sink& destination) {
     spdlog::debug("[S3Session] Preparing request for key: {}", file_key);
 
     auto req = S3RequestFactory::create_signed_get_request(
@@ -46,7 +46,7 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
 
     http::HttpStreamer streamer(ioc_);
 
-    auto result = co_await streamer.Execute(cfg_.host, cfg_.port,
+    auto result = co_await streamer.execute(cfg_.host, cfg_.port,
                                             std::move(req), destination);
 
     if (!result) {

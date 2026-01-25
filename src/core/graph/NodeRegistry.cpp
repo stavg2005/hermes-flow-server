@@ -46,7 +46,7 @@ std::expected<T, ErrorInfo> require(const json::object& ojson,
 //  Factory Creation Functions
 // =========================================================
 
-std::expected<std::shared_ptr<Node>, ErrorInfo> CreateFileInput(
+std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_input(
     boost::asio::io_context& io, const json::object& data) {
   auto name_res = require<std::string>(data, "fileName");
   if (!name_res) return std::unexpected(name_res.error());
@@ -59,12 +59,12 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> CreateFileInput(
   return std::make_shared<FileInputNode>(io, name, path);
 }
 
-std::expected<std::shared_ptr<Node>, ErrorInfo> CreateMixer(
+std::expected<std::shared_ptr<Node>, ErrorInfo> create_mixer(
     boost::asio::io_context&, const json::object&) {
   return std::make_shared<MixerNode>();
 }
 
-std::expected<std::shared_ptr<Node>, ErrorInfo> CreateDelay(
+std::expected<std::shared_ptr<Node>, ErrorInfo> create_delay(
     boost::asio::io_context&, const json::object& data) {
   return require<float>(data, "delay")
       .and_then([](float delay_sec) -> std::expected<float, ErrorInfo> {
@@ -80,7 +80,7 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> CreateDelay(
       });
 }
 
-std::expected<std::shared_ptr<Node>, ErrorInfo> CreateFileOptions(
+std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_options(
     boost::asio::io_context&, const json::object& data) {
   auto node = std::make_shared<FileOptionsNode>();
 
@@ -91,7 +91,7 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> CreateFileOptions(
   return node;
 }
 
-std::expected<std::shared_ptr<Node>, ErrorInfo> CreateClients(
+std::expected<std::shared_ptr<Node>, ErrorInfo> create_clients(
     boost::asio::io_context&, const json::object& data) {
   auto node = std::make_unique<ClientsNode>();
 
@@ -133,7 +133,7 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> CreateClients(
                                                "Port must be int or string"));
       }
 
-      node->AddClient(ip, port_val);
+      node->add_client(ip, port_val);
     }
   }
   return node;
@@ -142,15 +142,15 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> CreateClients(
 /**
  * @brief registers default notes with their creator function
  */
-void RegisterBuiltinNodes() {
-  auto& factory = NodeFactory::Instance();
+void register_builtin_nodes() {
+  auto& factory = NodeFactory::instance();
 
   // Map string keys (from JSON) to C++ creation functions
-  factory.Register("fileInput", CreateFileInput);
-  factory.Register("mixer", CreateMixer);
-  factory.Register("delay", CreateDelay);
-  factory.Register("clients", CreateClients);
-  factory.Register("fileOptions", CreateFileOptions);
+  factory.register_creator("fileInput", create_file_input);
+  factory.register_creator("mixer", create_mixer);
+  factory.register_creator("delay", create_delay);
+  factory.register_creator("clients", create_clients);
+  factory.register_creator("fileOptions", create_file_options);
 
   spdlog::debug("Registered built-in node types.");
 }

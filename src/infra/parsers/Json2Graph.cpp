@@ -52,7 +52,7 @@ std::expected<void, config::ErrorInfo> ParseNodes(boost::asio::io_context& io,
     }
 
     // 2. Creation
-    auto node_res = audio::NodeFactory::Instance().Create(*type, io, *data);
+    auto node_res = audio::NodeFactory::instance().create(*type, io, *data);
     if (!node_res) {
       return std::unexpected(node_res.error());
     }
@@ -60,7 +60,7 @@ std::expected<void, config::ErrorInfo> ParseNodes(boost::asio::io_context& io,
     auto node = std::move(*node_res);
 
     // 3. Storage
-    node->SetId(*id);
+    node->set_id(*id);
     graph.node_map[*id] = node;
     graph.nodes.push_back(std::move(node));
   }
@@ -110,13 +110,13 @@ std::expected<void, config::ErrorInfo> ParseEdges(const json::array& edges_arr,
     auto tgt_node = graph.node_map[tgt_id];
 
     // 2. Logic Check (Pre-flight)
-    if (src_node->Kind() == audio::NodeKind::Clients) {
+    if (src_node->kind() == audio::NodeKind::Clients) {
       return std::unexpected(ErrorInfo::From(
           AppError::ParseError, "ClientsNode cannot be a source."));
     }
 
     // 3. Polymorphic Connect
-    auto result = tgt_node->ConnectInput(src_node);
+    auto result = tgt_node->connect_input(src_node);
     if (!result) {
       return std::unexpected(
           ErrorInfo::From(AppError::ParseError, result.error().message));

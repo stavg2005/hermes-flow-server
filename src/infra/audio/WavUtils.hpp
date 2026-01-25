@@ -10,7 +10,7 @@ namespace hermes::audio::wav {
 
 // Returns the offset to the start of audio data (after "data" chunk size)
 // Returns 44 (default) if not found or invalid.
-inline size_t GetAudioDataOffset(std::span<const uint8_t> buffer) {
+inline size_t get_audio_data_offset(std::span<const uint8_t> buffer) {
     if (buffer.size() < 44) return 44;  // Too small, assume standard
 
 

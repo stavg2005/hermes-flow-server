@@ -17,7 +17,7 @@ namespace hermes::net::http {
  */
 class HttpSession : public std::enable_shared_from_this<HttpSession> {
  public:
-  static std::expected<std::shared_ptr<HttpSession>, ErrorInfo> Create(
+  static std::expected<std::shared_ptr<HttpSession>, ErrorInfo> create(
       tcp::socket socket, std::shared_ptr<Router> router);
 
   // Entry point: launches the session coroutine
@@ -28,7 +28,7 @@ class HttpSession : public std::enable_shared_from_this<HttpSession> {
   // Core Logic
   asio::awaitable<void> do_session();
 
-  
+
   asio::awaitable<std::expected<bool, ErrorInfo>> do_read_request();
 
 

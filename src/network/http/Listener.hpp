@@ -18,7 +18,7 @@ namespace hermes::net {
  **/
 class Listener : public std::enable_shared_from_this<Listener> {
  public:
-  static std::expected<std::shared_ptr<Listener>, ErrorInfo> Create(
+  static std::expected<std::shared_ptr<Listener>, ErrorInfo> create(
       asio::io_context& main_ioc, std::shared_ptr<IoContextPool> pool,
       const tcp::endpoint& endpoint, std::shared_ptr<http::Router> router);
   // Start accepting incoming connections

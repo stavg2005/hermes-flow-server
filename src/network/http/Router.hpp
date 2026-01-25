@@ -26,7 +26,7 @@ class Router {
   explicit Router(std::shared_ptr<hermes::service::ActiveSessions> active,
                   std::shared_ptr<IoContextPool> pool);
 
-  void RouteQuery(const req_t& req, res_t& res,
+  void route_query(const req_t& req, res_t& res,
                   boost::beast::tcp_stream& stream);
 
  private:

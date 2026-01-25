@@ -14,12 +14,12 @@ struct SessionStats {
 struct ISessionObserver {
   virtual ~ISessionObserver() = default;
 
-  virtual void OnStatsUpdate(const SessionStats& stats) = 0;
+  virtual void on_stats_update(const SessionStats& stats) = 0;
 
-  virtual void OnNodeTransition(const std::string& node_id) = 0;
+  virtual void on_node_transition(const std::string& node_id) = 0;
 
-  virtual void OnSessionComplete() = 0;
+  virtual void on_session_complete() = 0;
 
-  virtual void OnError(const std::string& error_message) = 0;
+  virtual void on_error(const std::string& error_message) = 0;
 };
 }  // namespace hermese::service

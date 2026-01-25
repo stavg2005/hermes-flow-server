@@ -2,14 +2,14 @@
 namespace hermes::audio {
 Node::Node(Node* t) : target_(t->shared_from_this()) {}
 
-IAudioProcessor* Node::AsAudio() { return nullptr; }
+IAudioProcessor* Node::as_audio() { return nullptr; }
 
-void Node::WireStandard(std::shared_ptr<Node> source) {
-  source->SetNext(this->shared_from_this());
+void Node::wire_standard(std::shared_ptr<Node> source) {
+  source->set_next(this->shared_from_this());
 }
-std::expected<void, config::NodeError> Node::ConnectInput(
+std::expected<void, config::NodeError> Node::connect_input(
     std::shared_ptr<Node> source) {
-  return Error(config::NodeErrorCode::FormatError,
+  return error(config::NodeErrorCode::FormatError,
                "Node type {} does not accept inputs.", id_);
 }
 }  // namespace hermes::audio

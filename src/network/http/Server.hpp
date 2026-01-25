@@ -15,14 +15,14 @@ namespace hermes::net {
  */
 class Server : public std::enable_shared_from_this<Server> {
  public:
-  static std::expected<std::shared_ptr<Server>, ErrorInfo> Create(
+  static std::expected<std::shared_ptr<Server>, ErrorInfo> create(
       boost::asio::io_context& main_ioc, const std::string& address,
       const std::string& port, unsigned int threads);
 
   ~Server();
 
-  void Start();
-  void Stop();
+  void start();
+  void stop();
 
  private:
   Server(boost::asio::io_context& main_ioc, std::shared_ptr<IoContextPool> pool,

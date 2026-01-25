@@ -14,7 +14,7 @@ namespace hermes::net::rtp {
 
 static constexpr size_t RTP_HEADER_SIZE = 12;
 
-inline size_t packet2rtp(std::span<const uint8_t> pcmFrame,
+inline size_t packet_to_rtp(std::span<const uint8_t> pcmFrame,
                          RTPPacketizer& packetizer, audio::ICodecStrategy& codec,
                          std::span<uint8_t> outBuffer) {
   if (outBuffer.size() < RTP_HEADER_SIZE) {
@@ -24,7 +24,7 @@ inline size_t packet2rtp(std::span<const uint8_t> pcmFrame,
 
   auto payload_buffer = outBuffer.subspan(RTP_HEADER_SIZE);
 
-  size_t encoded_size = codec.Encode(pcmFrame, payload_buffer);
+  size_t encoded_size = codec.encode(pcmFrame, payload_buffer);
 
   if (encoded_size == 0) {
     std::cerr << "[PacketUtils] Encoding failed or buffer too small\n";

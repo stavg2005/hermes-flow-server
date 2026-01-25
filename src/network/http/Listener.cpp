@@ -17,7 +17,7 @@
 using namespace hermes::net::http;
 namespace hermes::net {
 
-std::expected<std::shared_ptr<Listener>, ErrorInfo> Listener::Create(
+std::expected<std::shared_ptr<Listener>, ErrorInfo> Listener::create(
     asio::io_context& main_ioc, std::shared_ptr<IoContextPool> pool,
     const tcp::endpoint& endpoint, std::shared_ptr<Router> router) {
   tcp::acceptor acceptor(main_ioc);
@@ -98,7 +98,7 @@ asio::awaitable<std::expected<void, ErrorInfo>> Listener::do_accept() {
 
       spdlog::debug("New connection accepted ");
 
-      auto http_res = HttpSession::Create(std::move(socket), router_);
+      auto http_res = HttpSession::create(std::move(socket), router_);
 
       if (!http_res) {
         spdlog::error("{}", http_res.error().message);

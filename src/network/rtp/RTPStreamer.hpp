@@ -29,11 +29,11 @@ class RTPStreamer {
                 boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0)) {
     codec_ = std::make_unique<audio::ALawCodecStrategy>();
     packetizer_ = std::make_unique<RTPPacketizer>(
-        codec_->GetPayloadType(), generate_ssrc(),
-        codec_->GetTimestampIncrement(config::FRAME_SIZE_BYTES));
+        codec_->get_payload_type(), generate_ssrc(),
+        codec_->get_timestamp_increment(config::FRAME_SIZE_BYTES));
   }
 
-  void AddClient(const std::string& ip, uint16_t port) {
+  void add_client(const std::string& ip, uint16_t port) {
     boost::system::error_code ec;
     auto addr = boost::asio::ip::make_address(ip, ec);
     if (ec) {
@@ -49,7 +49,7 @@ class RTPStreamer {
     }
   }
 
-  void RemoveClient(const std::string& ip, uint16_t port) {
+  void remove_client(const std::string& ip, uint16_t port) {
     try {
       auto addr = asio::ip::make_address(ip);
       udp::endpoint ep(addr, port);
@@ -62,15 +62,17 @@ class RTPStreamer {
 
   // Zero-copy fan-out.
   // Uses callbacks for parallel dispatch (cheaper than coroutines).
-  void SendFrame(std::span<const uint8_t> pcm_frame) {
+  void send_frame(std::span<const uint8_t> pcm_frame) {
     if (clients_.empty()) return;
 
     size_t max_packet_size = RTP_HEADER_SIZE + pcm_frame.size();
-    auto packet_owner = infra::BufferPool::Instance().Acquire(max_packet_size);
+    auto packet_owner =
+        infra::BufferPool::instance().acquire(max_packet_size);
     std::span<uint8_t> packet_span(*packet_owner);
 
     size_t packet_size =
-        packet2rtp(pcm_frame, *packetizer_, *codec_, packet_span);
+        packet_to_rtp(pcm_frame, *packetizer_, *codec_, packet_span);
+
 
     if (packet_size == 0) return;
 

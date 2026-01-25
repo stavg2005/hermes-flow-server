@@ -3,5 +3,5 @@ namespace hermes::audio {
 /**
  * @brief registers default notes with their creator function
  */
-void RegisterBuiltinNodes();
+void register_builtin_nodes();
 }  // namespace hermes::audio

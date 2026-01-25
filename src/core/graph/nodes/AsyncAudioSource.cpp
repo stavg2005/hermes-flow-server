@@ -10,27 +10,27 @@ namespace hermes::audio {
 
 AsyncAudioSource::AsyncAudioSource(boost::asio::io_context& io) : io_(io) {}
 
-boost::asio::awaitable<void> AsyncAudioSource::InitializeBuffers() {
-  size_t bytes = co_await FetchBytes(bf_.GetWriteSpan());
+boost::asio::awaitable<void> AsyncAudioSource::initialize_buffers() {
+  size_t bytes = co_await fetch_bytes(bf_.get_write_span());
   spdlog::debug("got {} bytes", bytes);
   bf_.back_buffer_ready_ = true;
 
-  bf_.Swap();
+  bf_.swap();
 
-  bytes = co_await FetchBytes(bf_.GetWriteSpan());
+  bytes = co_await fetch_bytes(bf_.get_write_span());
   spdlog::debug("got {} bytes", bytes);
   bf_.back_buffer_ready_ = true;
 
   co_return;
 }
 
-std::expected<void, config::NodeError> AsyncAudioSource::ProcessFrame(
+std::expected<void, config::NodeError> AsyncAudioSource::process_frame(
     std::span<uint8_t> frame_buffer) {
-  auto current_span = bf_.GetReadSpan();
+  auto current_span = bf_.get_read_span();
   size_t buffer_offset = in_buffer_processed_frames_ * config::FRAME_SIZE_BYTES;
 
   if (processed_frames_ == 0) {
-    size_t offset = GetReadOffset(current_span);
+    size_t offset = get_read_offset(current_span);
     buffer_offset += offset;
   }
 
@@ -39,14 +39,14 @@ std::expected<void, config::NodeError> AsyncAudioSource::ProcessFrame(
     // If back buffer isn't ready, we have an underrun (CPU/Disk too slow)
     if (!bf_.back_buffer_ready_) {
       std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
-      return Error(config::NodeErrorCode::Underrun, "Underrun in node {}", id_);
+      return error(config::NodeErrorCode::Underrun, "Underrun in node {}", id_);
     }
 
-    bf_.Swap();
+    bf_.swap();
 
     // Reset counters for the new front buffer
     in_buffer_processed_frames_ = 0;
-    current_span = bf_.GetReadSpan();
+    current_span = bf_.get_read_span();
     buffer_offset = 0;
 
     boost::asio::co_spawn(
@@ -55,7 +55,7 @@ std::expected<void, config::NodeError> AsyncAudioSource::ProcessFrame(
              shared_from_this())]() -> boost::asio::awaitable<void> {
           try {
             // Fetch bytes into the write (back) buffer
-            co_await self->FetchBytes(self->bf_.GetWriteSpan());
+            co_await self->fetch_bytes(self->bf_.get_write_span());
             // Mark ready so the audio thread can swap to it later
             self->bf_.back_buffer_ready_ = true;
           } catch (const std::exception& e) {
@@ -77,7 +77,7 @@ std::expected<void, config::NodeError> AsyncAudioSource::ProcessFrame(
 
     // FIRST time hitting EOS: Increment counter and Log it once.
     processed_frames_++;
-    return Error(config::NodeErrorCode::EndOfStream, "End of stream for {}",
+    return error(config::NodeErrorCode::EndOfStream, "End of stream for {}",
                  id_);
   }
 
@@ -90,7 +90,7 @@ std::expected<void, config::NodeError> AsyncAudioSource::ProcessFrame(
   } else {
     auto src_span = std::span<uint8_t>(src_it, config::FRAME_SIZE_BYTES);
 
-    ApplyEffects(src_span);
+    apply_effects(src_span);
 
     // Copy to output buffer
     std::copy(src_span.begin(), src_span.end(), frame_buffer.begin());
@@ -102,5 +102,5 @@ std::expected<void, config::NodeError> AsyncAudioSource::ProcessFrame(
   return {};
 }
 
-IAudioProcessor* AsyncAudioSource::AsAudio() { return this; };
+IAudioProcessor* AsyncAudioSource::as_audio() { return this; };
 }  // namespace hermes::audio

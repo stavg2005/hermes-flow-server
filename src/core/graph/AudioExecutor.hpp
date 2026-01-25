@@ -28,21 +28,21 @@ class AudioExecutor {
    * @return A reference to the stats object used by Observers (e.g.,
    * WebSocket).
    */
-  service::SessionStats& GetStats();
+  service::SessionStats& get_stats();
 
   /**
    * @brief Scans the graph for FileInputNodes.
    * Triggers S3 downloads for any missing files.
    * Pre-fills the initial Double Buffers.
    */
-  boost::asio::awaitable<std::expected<void, config::ErrorInfo>> Prepare();
+  boost::asio::awaitable<std::expected<void, config::ErrorInfo>> prepare();
 
   /**
    * @brief pull data from the current node that is being proccesed
    * @param output_buffer buffer for the mixed PCM audio.
    * @return true if a frame was produced, false if the graph is over .
    */
-  std::pair<bool, config::NodeError> GetNextFrame(
+  std::pair<bool, config::NodeError> get_next_frame(
       std::span<uint8_t> output_buffer);
 
  private:
@@ -50,21 +50,21 @@ class AudioExecutor {
    * @brief Helper to iterate all nodes and ensure files exist locally.
    * Initiates S3 downloads if files are missing from the disk.
    */
-  boost::asio::awaitable<std::expected<void, config::ErrorInfo>> FetchFiles();
+  boost::asio::awaitable<std::expected<void, config::ErrorInfo>> fetch_files();
 
   /**
    * @brief Configures mixer nodes based on their inputs.
    * Calculates total frame duration for mixers to know when to stop.
    */
-  void UpdateMixers();
+  void update_mixers();
 
   boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
-  EnsureAssetsExist();
+  ensure_assets_exist();
 
   boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
-  InitializeNodes();
+  initialize_nodes();
   template <typename... Args>
-  std::unexpected<config::ErrorInfo> Error(config::AppError code,
+  std::unexpected<config::ErrorInfo> error(config::AppError code,
                                            std::format_string<Args...> fmt,
                                            Args&&... args) const {
     std::string msg = std::format(fmt, std::forward<Args>(args)...);

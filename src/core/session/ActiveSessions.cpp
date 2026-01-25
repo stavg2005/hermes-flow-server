@@ -16,7 +16,7 @@ namespace hermes::service {
 ActiveSessions::ActiveSessions(std::shared_ptr<IoContextPool> pool)
     : pool_(std::move(pool)) {}
 
-std::expected<std::string, ErrorInfo> ActiveSessions::CreateSession(
+std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
     const boost::json::object& jobj) {
   if (!pool_) {
     spdlog::critical("ActiveSessions: IoContextPool is null!");
@@ -54,7 +54,7 @@ std::expected<std::string, ErrorInfo> ActiveSessions::CreateSession(
   return session_id;
 }
 
-std::expected<void, ErrorInfo> ActiveSessions::CreateAndRunWebsocketSession(
+std::expected<void, ErrorInfo> ActiveSessions::create_and_run_websocket_session(
     const std::string& audio_session_id, const req_t& req,
     boost::beast::tcp_stream& stream) {
   std::shared_ptr<Session> session;
@@ -68,7 +68,7 @@ std::expected<void, ErrorInfo> ActiveSessions::CreateAndRunWebsocketSession(
     session = it->second;
   }
 
-  if (session->IsRunning()) {
+  if (session->is_running()) {
     return std::unexpected(
         ErrorInfo::From(AppError::LogicError,
                         "A WebSocket is already connected to this session"));
@@ -77,7 +77,7 @@ std::expected<void, ErrorInfo> ActiveSessions::CreateAndRunWebsocketSession(
   auto websocket = std::make_shared<WebSocketSession>(stream.release_socket());
   websocket->do_accept(req);
 
-  session->AttachObserver(
+  session->attach_observer(
       std::make_shared<WebSocketSessionObserver>(websocket));
 
   {
@@ -93,18 +93,18 @@ std::expected<void, ErrorInfo> ActiveSessions::CreateAndRunWebsocketSession(
         // sess->start() handles its own logic errors now, but we keep the
         // try/catch for unhandled infrastructure exceptions
         try {
-          co_await sess->Start();
+          co_await sess->start();
         } catch (const std::exception& e) {
           spdlog::error("[{}] Unhandled session exception: {}", id, e.what());
         }
-        RemoveSession(id);
+        remove_session(id);
       },
       asio::detached);
 
   return {};
 }
 
-ActiveSessions::RemoveStatus ActiveSessions::RemoveSession(
+ActiveSessions::RemoveStatus ActiveSessions::remove_session(
     const std::string& id) {
   std::lock_guard<std::mutex> lock(mutex_);
 
@@ -113,7 +113,7 @@ ActiveSessions::RemoveStatus ActiveSessions::RemoveSession(
     return RemoveStatus::SessionNotFound;
   }
 
-  session_it->second->Stop();
+  session_it->second->stop();
   sessions_.erase(session_it);
   spdlog::info("[{}] Audio session stopped and removed.", id);
 

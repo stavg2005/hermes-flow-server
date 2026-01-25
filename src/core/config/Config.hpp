@@ -49,6 +49,6 @@ struct AppConfig {
  * @param path Path to the .toml file (default: "config.toml")
  * @return Parsed AppConfig object.
  */
-std::expected<AppConfig, ErrorInfo> LoadConfig(
+std::expected<AppConfig, ErrorInfo> load_config(
     const std::string& path = "config.toml");
 };  // namespace hermes::config

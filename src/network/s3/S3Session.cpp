@@ -1,5 +1,6 @@
 #include "S3Session.hpp"
 
+#include "Config.hpp"
 #include "spdlog/spdlog.h"
 #include "Types.hpp"
 
@@ -16,7 +17,7 @@ S3Session::S3Session(boost::asio::io_context& ioc, S3Config cfg)
 // Factory Implementation
 // ============================================================================
 std::expected<std::shared_ptr<S3Session>,ErrorInfo>
-S3Session::Create(boost::asio::io_context& ioc,
+S3Session::create(boost::asio::io_context& ioc,
                   const S3Config& manual_cfg) {
   S3Config final_config = manual_cfg;
 
@@ -25,7 +26,7 @@ S3Session::Create(boost::asio::io_context& ioc,
     spdlog::debug("[S3Session] No config provided, loading from config.toml");
 
     // Assuming LoadConfig returns expected<Config, ErrorInfo>
-    auto config_result =LoadConfig("../config.toml");
+    auto config_result =load_config("../config.toml");
 
     if (!config_result) {
       spdlog::error("S3Session failed to load config: {}",

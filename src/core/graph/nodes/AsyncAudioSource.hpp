@@ -24,7 +24,7 @@ class AsyncAudioSource : public Node,
    * (Disk/Network).
    * @return Number of bytes actually read.
    */
-  virtual boost::asio::awaitable<size_t> FetchBytes(
+  virtual boost::asio::awaitable<size_t> fetch_bytes(
       std::span<uint8_t> dest) = 0;
 
  public:
@@ -35,20 +35,20 @@ class AsyncAudioSource : public Node,
   /**
    * @brief Pre-fills both front and back buffers before playback starts.
    */
-  boost::asio::awaitable<void> InitializeBuffers() override;
+  boost::asio::awaitable<void> initialize_buffers() override;
 
   // --- IAudioProcessor Implementation ---
   /**
    * @brief Reads from the buffer. If empty, swaps and triggers async refill.
    */
-  std::expected<void, config::NodeError> ProcessFrame(
+  std::expected<void, config::NodeError> process_frame(
       std::span<uint8_t> buffer) override;
 
-  IAudioProcessor* AsAudio() override;
+  IAudioProcessor* as_audio() override;
 
   // --- Optional Hooks ---
-  virtual void ApplyEffects(std::span<uint8_t> buffer) {}
-  virtual size_t GetReadOffset(std::span<uint8_t> buffer) { return 0; }
+  virtual void apply_effects(std::span<uint8_t> buffer) {}
+  virtual size_t get_read_offset(std::span<uint8_t> buffer) { return 0; }
 };
 
 }  // namespace hermes::audio

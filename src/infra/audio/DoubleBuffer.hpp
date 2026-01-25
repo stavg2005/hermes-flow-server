@@ -33,19 +33,19 @@ struct DoubleBuffer {
   DoubleBuffer& operator=(const DoubleBuffer&) = delete;
 
   /** @brief Returns a span pointing to the currently active read buffer. */
-  std::span<uint8_t> GetReadSpan();
+  std::span<uint8_t> get_read_span();
 
   /** @brief Returns a span pointing to the inactive write buffer. */
-  std::span<uint8_t> GetWriteSpan();
+  std::span<uint8_t> get_write_span();
 
   /** @brief Sets the index of the read buffer (0 or 1). */
-  void SetReadIndex(int value);
+  void set_read_index(int value);
 
   /**
    * @brief Swaps the read and write buffers.
    * @note Ensure 'back_buffer_ready' is true before calling to avoid underrun.
    */
-  void Swap();
+  void swap();
 
  private:
   std::array<std::vector<uint8_t>, 2> blocks_;

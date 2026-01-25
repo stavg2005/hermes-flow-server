@@ -16,7 +16,7 @@ public:
      * @brief Adds a source buffer into an accumulator buffer.
      * Performs: acc[i] += input[i]
      */
-    static void SumBuffers(std::span<int32_t> accumulator, std::span<const int16_t> input) {
+    static void sum_buffers(std::span<int32_t> accumulator, std::span<const int16_t> input) {
         // This loop is a prime candidate for SIMD optimization (AVX/SSE) later
         // without changing the MixerNode code.
         for (size_t i = 0; i < accumulator.size() && i < input.size(); ++i) {
@@ -28,7 +28,7 @@ public:
      * @brief Compresses a 32-bit accumulated sample into a 16-bit PCM sample
      * using hyperbolic tangent (tanh) for soft clipping.
      */
-    static int16_t SoftClip(int32_t sample) {
+    static int16_t soft_clip(int32_t sample) {
         if (sample > CLIP_LIMIT || sample < -CLIP_LIMIT) {
             float compressed = std::tanh(static_cast<float>(sample) / MAX_INT16);
             return static_cast<int16_t>(compressed * MAX_INT16);
@@ -39,12 +39,12 @@ public:
     /**
      * @brief Batch processes an accumulator into an output buffer.
      */
-    static void CompressAndExport(std::span<const int32_t> accumulator, std::span<uint8_t> output_bytes) {
+    static void compress_and_export(std::span<const int32_t> accumulator, std::span<uint8_t> output_bytes) {
         auto* out_samples = reinterpret_cast<int16_t*>(output_bytes.data());
         size_t count = output_bytes.size() / sizeof(int16_t);
 
         for (size_t i = 0; i < count; ++i) {
-            out_samples[i] = SoftClip(accumulator[i]);
+            out_samples[i] = soft_clip(accumulator[i]);
         }
     }
 };

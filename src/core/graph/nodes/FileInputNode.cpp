@@ -25,7 +25,7 @@ FileInputNode::FileInputNode(boost::asio::io_context& io, std::string name,
   kind_ = NodeKind::FileInput;
 }
 
-std::expected<void, NodeError> FileInputNode::Open() {
+std::expected<void, NodeError> FileInputNode::open() {
   constexpr int max_retries = 3;
   int attempt = 0;
   boost::system::error_code ec;
@@ -47,17 +47,17 @@ std::expected<void, NodeError> FileInputNode::Open() {
   }
 
   total_frames_ = 0;
-  return Error(NodeErrorCode::FileIOError,
+  return error(NodeErrorCode::FileIOError,
                "Failed to open file {} ({}) after {} attempts.", file_name_,
                file_path_, max_retries);
 }
 
-std::expected<void, NodeError> FileInputNode::Close() {
+std::expected<void, NodeError> FileInputNode::close() {
   boost::system::error_code ec;
   file_handle_.close(ec);
 
   if (ec) {
-    return Error(NodeErrorCode::FileIOError, "Failed to close file {} {}: {}",
+    return error(NodeErrorCode::FileIOError, "Failed to close file {} {}: {}",
                  file_name_, file_path_, ec.message());
   }
 
@@ -68,10 +68,10 @@ std::expected<void, NodeError> FileInputNode::Close() {
   return {};
 }
 
-boost::asio::awaitable<size_t> FileInputNode::FetchBytes(
+boost::asio::awaitable<size_t> FileInputNode::fetch_bytes(
     std::span<uint8_t> dest) {
   if (!file_handle_.is_open()) {
-    auto result = Open();
+    auto result = open();
     if (!result) {
       spdlog::error("[{}] Failed to lazy-open file: {}", file_name_,
                     result.error().message);
@@ -106,17 +106,17 @@ boost::asio::awaitable<size_t> FileInputNode::FetchBytes(
   co_return 0;
 }
 
-size_t FileInputNode::GetReadOffset(std::span<uint8_t> buffer) {
+size_t FileInputNode::get_read_offset(std::span<uint8_t> buffer) {
   // This replaces the logic that was previously inside ProcessFrame
   if (is_first_read_) {
-    size_t offset = wav::GetAudioDataOffset(buffer);
+    size_t offset = wav::get_audio_data_offset(buffer);
     is_first_read_ = false;
     return offset;
   }
   return 0;
 }
 
-void FileInputNode::ApplyEffects(std::span<uint8_t> frame_buffer) {
+void FileInputNode::apply_effects(std::span<uint8_t> frame_buffer) {
   if (!options_ || options_->gain == 1.0) return;
 
   // Note: ideally check frame_buffer.size() alignment here
@@ -136,34 +136,34 @@ void FileInputNode::ApplyEffects(std::span<uint8_t> frame_buffer) {
 //  Options & Configuration
 // =========================================================
 
-void FileInputNode::SetOptions(std::shared_ptr<FileOptionsNode> options_node) {
+void FileInputNode::set_options(std::shared_ptr<FileOptionsNode> options_node) {
   options_ = std::move(options_node);
   if (options_) {
     spdlog::info("[{}] Set gain option: {}", file_name_, options_->gain);
   }
 }
 
-std::expected<void, config::NodeError> FileInputNode::ConnectInput(
+std::expected<void, config::NodeError> FileInputNode::connect_input(
     std::shared_ptr<Node> source) {
-  if (source->Kind() == NodeKind::Mixer) {
-    return Error(config::NodeErrorCode::FormatError,
+  if (source->kind() == NodeKind::Mixer) {
+    return error(config::NodeErrorCode::FormatError,
                  "FileInput cannot receive input from Mixer.");
   }
 
-  if (source->Kind() == NodeKind::FileOptions) {
+  if (source->kind() == NodeKind::FileOptions) {
     auto options = std::dynamic_pointer_cast<FileOptionsNode>(source);
-    SetOptions(options);
+    set_options(options);
     //  We do NOT call WireStandard here.
     // Options are "side-loaded" config, not an upstream audio source.
     return {};
   }
 
-  if (source->Kind() == NodeKind::Delay) {
-    WireStandard(source);
+  if (source->kind() == NodeKind::Delay) {
+    wire_standard(source);
     return {};
   }
 
-  return Error(config::NodeErrorCode::FormatError,
+  return error(config::NodeErrorCode::FormatError,
                "FileInput only accepts Delay or FileOptions.");
 }
 

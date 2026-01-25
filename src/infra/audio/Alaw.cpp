@@ -166,7 +166,7 @@ static std::array<uint16_t, VALUE_COUNT_U8BIT> make_decode_table() {
 // NOLINTEND(hicpp-signed-bitwise)
 
 // Uses the pre-computed table for O(1) lookup per sample.
-void EncodeAlaw(boost::span<const int16_t> pcm, boost::span<uint8_t> alawOut) {
+void encode_alaw(boost::span<const int16_t> pcm, boost::span<uint8_t> alawOut) {
   // Ensure output span is large enough
   if (pcm.size() > alawOut.size()) {
     return;  // Or throw an exception based on your error handling policy
@@ -181,7 +181,7 @@ void EncodeAlaw(boost::span<const int16_t> pcm, boost::span<uint8_t> alawOut) {
 }
 
 // Uses the pre-computed table for O(1) lookup per sample.
-void DecodeAlaw(boost::span<const uint8_t> alaw, boost::span<int16_t> pcmOut) {
+void decode_alaw(boost::span<const uint8_t> alaw, boost::span<int16_t> pcmOut) {
   // Ensure output span is large enough
   if (alaw.size() > pcmOut.size()) {
     return;  // Or throw an exception based on your error handling policy

@@ -29,7 +29,7 @@ void fail(beast::error_code ec, const char* what) {
   }
 }
 
-std::expected<std::shared_ptr<HttpSession>, ErrorInfo> HttpSession::Create(
+std::expected<std::shared_ptr<HttpSession>, ErrorInfo> HttpSession::create(
     tcp::socket socket, std::shared_ptr<Router> router) {
   if (!router) {
     return std::unexpected(ErrorInfo::From(
@@ -76,12 +76,12 @@ asio::awaitable<void> HttpSession::do_session() {
       bool keep_alive = *read_result;
       const auto& req = parser_->get();
 
-      
+
       if (beast::websocket::is_upgrade(req)) {
         spdlog::info("Upgrading to WebSocket...");
 
         beast::http::response<beast::http::string_body> dummy_res;
-        router_->RouteQuery(req, dummy_res, stream_);
+        router_->route_query(req, dummy_res, stream_);
 
         co_return;  // End HTTP lifecycle
       }
@@ -207,7 +207,7 @@ beast::http::response<beast::http::string_body> HttpSession::do_build_response()
     res.version(req.version());
     res.keep_alive(req.keep_alive());
     // router fills the response
-    router_->RouteQuery(req, res, stream_);
+    router_->route_query(req, res, stream_);
   }
   return res;
 }
