@@ -4,6 +4,7 @@
 
 #include <Types.hpp>
 #include <expected>
+#include <memory>
 #include <span>
 
 namespace hermes::audio {
@@ -43,31 +44,60 @@ struct IAsyncInitializer {
  * @brief Base class for all nodes in the audio graph
  * Holds execution state and links to the next node.
  */
-struct Node {
-  std::string id_;
-  NodeKind kind_;
-  Node* target_ = nullptr;
-
-  // Execution State (Managed by AudioExecutor)
-  int processed_frames_{0};     /**< Number of 20ms frames processed so far */
-  int total_frames_{0};         /**< Total duration in 20ms frames (e.g. file size / frame_size) */
-  int in_buffer_processed_frames_{0}; /**< Offset within the current audio buffer (in frames) */
-
-  explicit Node(Node* t = nullptr);
+struct Node : public std::enable_shared_from_this<Node> {
+ public:
+  explicit Node(Node* next = nullptr);
   virtual ~Node() = default;
 
-  /** @brief Returns this node as an audio processor, if it is. */
+  [[nodiscard]] std::string_view Id() const { return id_; }
+  [[nodiscard]] NodeKind Kind() const { return kind_; }
+
+  [[nodiscard]] std::shared_ptr<Node> Next() const { return target_.lock(); }
+  void SetNext(std::shared_ptr<Node> target) {
+    target_ = target;
+  }  // Explicit rewiring
+
+  int GetTotalFrames() const { return total_frames_; }
+  void SetTotalFreames(int frames) { total_frames_ = frames; }
+
+  void SetId(std::string id) { id_ = std::move(id); }
+
+  [[nodiscard]] bool IsComplete() const {
+    return (total_frames_ > 0) && (processed_frames_ >= total_frames_);
+  }
+
+  /** * @brief Resets counters. Essential for re-using the graph.
+   */
+  virtual void ResetState() {
+    processed_frames_ = 0;
+    in_buffer_processed_frames_ = 0;
+  }
+
+  // --- 3. Polymorphic Interfaces ---
   virtual IAudioProcessor* AsAudio();
+  virtual std::expected<void, config::NodeError> ConnectInput(
+      std::shared_ptr<Node> source);
+  void WireStandard(std::shared_ptr<Node> source);
 
  protected:
+  // Protected: Subclasses (Mixer, FileInput) need direct access for
+  // performance
+  std::string id_;
+  NodeKind kind_;
+  std::weak_ptr<Node> target_;
+
+  int processed_frames_{0};
+  int total_frames_{0};
+  int in_buffer_processed_frames_{0};
+
+  // Helper for error logging
   template <typename... Args>
   std::unexpected<config::NodeError> Error(config::NodeErrorCode code,
                                            std::format_string<Args...> fmt,
                                            Args&&... args) const {
+    // ... implementation same as before ...
     std::string msg = std::format(fmt, std::forward<Args>(args)...);
-
     spdlog::error("[{}] {}", id_, msg);
-
     return std::unexpected(config::NodeError{code, msg, id_});
   }
 };
@@ -75,6 +105,6 @@ struct Node {
 struct Graph {
   std::vector<std::shared_ptr<Node>> nodes;
   std::unordered_map<std::string, std::shared_ptr<Node>> node_map;
-  Node* start_node = nullptr;
+  std::weak_ptr<Node> start_node;
 };
 }  // namespace hermes::audio

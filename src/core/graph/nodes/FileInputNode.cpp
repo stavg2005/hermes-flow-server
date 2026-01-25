@@ -55,7 +55,7 @@ std::expected<void, NodeError> FileInputNode::Open() {
 std::expected<void, NodeError> FileInputNode::Close() {
   boost::system::error_code ec;
   file_handle_.close(ec);
-  
+
   if (ec) {
     return Error(NodeErrorCode::FileIOError, "Failed to close file {} {}: {}",
                  file_name_, file_path_, ec.message());
@@ -141,6 +141,30 @@ void FileInputNode::SetOptions(std::shared_ptr<FileOptionsNode> options_node) {
   if (options_) {
     spdlog::info("[{}] Set gain option: {}", file_name_, options_->gain);
   }
+}
+
+std::expected<void, config::NodeError> FileInputNode::ConnectInput(
+    std::shared_ptr<Node> source) {
+  if (source->Kind() == NodeKind::Mixer) {
+    return Error(config::NodeErrorCode::FormatError,
+                 "FileInput cannot receive input from Mixer.");
+  }
+
+  if (source->Kind() == NodeKind::FileOptions) {
+    auto options = std::dynamic_pointer_cast<FileOptionsNode>(source);
+    SetOptions(options);
+    //  We do NOT call WireStandard here.
+    // Options are "side-loaded" config, not an upstream audio source.
+    return {};
+  }
+
+  if (source->Kind() == NodeKind::Delay) {
+    WireStandard(source);
+    return {};
+  }
+
+  return Error(config::NodeErrorCode::FormatError,
+               "FileInput only accepts Delay or FileOptions.");
 }
 
 }  // namespace hermes::audio

@@ -45,7 +45,7 @@ void Session::Stop() {
 
 void Session::ConfigureStreamerFromGraph() {
   for (const auto& node : graph_->nodes) {
-    if (node->kind_ == NodeKind::Clients) {
+    if (node->Kind() == NodeKind::Clients) {
       auto* clientsNode = static_cast<ClientsNode*>(node.get());
 
       for (const auto& [ip, port] : clientsNode->clients) {

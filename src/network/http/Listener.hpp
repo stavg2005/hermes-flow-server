@@ -2,6 +2,7 @@
 
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
+#include <expected>
 #include <memory>
 
 #include "IoContextPool.hpp"
@@ -25,7 +26,7 @@ class Listener : public std::enable_shared_from_this<Listener> {
 
  private:
   // Accept a new connection
-  asio::awaitable<void> do_accept();
+  asio::awaitable<std::expected<void,ErrorInfo>> do_accept();
 
   Listener(asio::io_context& main_ioc, std::shared_ptr<IoContextPool> pool,
            tcp::acceptor&& acceptor, std::shared_ptr<http::Router> router);

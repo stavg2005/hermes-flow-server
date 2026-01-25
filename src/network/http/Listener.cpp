@@ -5,6 +5,7 @@
 #include <boost/asio/detached.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/beast.hpp>
+#include <expected>
 #include <iostream>
 
 #include "HttpSession.hpp"
@@ -21,7 +22,9 @@ std::expected<std::shared_ptr<Listener>, ErrorInfo> Listener::Create(
     const tcp::endpoint& endpoint, std::shared_ptr<Router> router) {
   tcp::acceptor acceptor(main_ioc);
 
-  auto run_step = [&](auto operation, const std::string& err_msg) -> std::expected<void, ErrorInfo> {
+  auto run_step =
+      [&](auto operation,
+          const std::string& err_msg) -> std::expected<void, ErrorInfo> {
     beast::error_code ec;
     operation(ec);
     if (ec) {
@@ -31,23 +34,30 @@ std::expected<std::shared_ptr<Listener>, ErrorInfo> Listener::Create(
     return {};
   };
 
-  return run_step([&](auto& ec) { acceptor.open(endpoint.protocol(), ec); }, "Open Failed")
+  return run_step([&](auto& ec) { acceptor.open(endpoint.protocol(), ec); },
+                  "Open Failed")
       .and_then([&] {
-        return run_step([&](auto& ec) {
-           acceptor.set_option(asio::socket_base::reuse_address(true), ec);
-        }, "SetOption Failed");
+        return run_step(
+            [&](auto& ec) {
+              acceptor.set_option(asio::socket_base::reuse_address(true), ec);
+            },
+            "SetOption Failed");
       })
       .and_then([&] {
-        return run_step([&](auto& ec) { acceptor.bind(endpoint, ec); }, "Bind Failed");
+        return run_step([&](auto& ec) { acceptor.bind(endpoint, ec); },
+                        "Bind Failed");
       })
       .and_then([&] {
-        return run_step([&](auto& ec) {
-           acceptor.listen(asio::socket_base::max_listen_connections, ec);
-        }, "Listen Failed");
+        return run_step(
+            [&](auto& ec) {
+              acceptor.listen(asio::socket_base::max_listen_connections, ec);
+            },
+            "Listen Failed");
       })
 
       .transform([&] {
-        spdlog::info("Listener bound to {}:{}", endpoint.address().to_string(), endpoint.port());
+        spdlog::info("Listener bound to {}:{}", endpoint.address().to_string(),
+                     endpoint.port());
         return std::shared_ptr<Listener>(new Listener(
             main_ioc, std::move(pool), std::move(acceptor), std::move(router)));
       });
@@ -70,7 +80,7 @@ void Listener::run() {
       asio::detached);
 }
 
-asio::awaitable<void> Listener::do_accept() {
+asio::awaitable<std::expected<void, ErrorInfo>> Listener::do_accept() {
   try {
     for (;;) {
       auto& pool_ioc = pool_->get_io_context();
@@ -82,7 +92,7 @@ asio::awaitable<void> Listener::do_accept() {
         if (ec == asio::error::operation_aborted) {
           break;
         }
-        // fail(ec, "accept");
+        spdlog::error("listener faild to connect {}", ec.message());
         continue;
       }
 
@@ -91,7 +101,7 @@ asio::awaitable<void> Listener::do_accept() {
       auto http_res = HttpSession::Create(std::move(socket), router_);
 
       if (!http_res) {
-        spdlog::error("bruhhh");
+        spdlog::error("{}", http_res.error().message);
       }
       auto http = http_res.value();
 
@@ -99,8 +109,8 @@ asio::awaitable<void> Listener::do_accept() {
     }
   } catch (const std::exception& e) {
     spdlog::error("[Listener] Uncaught exception: {}", e.what());
-  } catch (...) {
-    spdlog::error("[Listener] Unknown crash exception");
+    co_return std::unexpected(ErrorInfo::From(
+        AppError::NetworkError, "[Listener] Uncaught exception: {}", e.what()));
   }
 }
 }  // namespace hermes::net

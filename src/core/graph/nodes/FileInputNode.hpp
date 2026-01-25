@@ -6,7 +6,6 @@
 
 #include "AsyncAudioSource.hpp"
 
-
 // Forward declaration if needed, or include the header
 #include "nodes/FileOptionsNode.hpp"
 
@@ -16,7 +15,7 @@ namespace hermes::audio {
  * @brief Specific implementation for Disk Files.
  * Inherits buffering magic from AsyncAudioSource.
  */
-struct FileInputNode : public AsyncAudioSource{
+struct FileInputNode : public AsyncAudioSource {
   // --- File Specific Members ---
   std::string file_name_;
   std::string file_path_;
@@ -31,6 +30,9 @@ struct FileInputNode : public AsyncAudioSource{
                          std::string path);
 
   // --- AsyncAudioSource Implementations ---
+
+  virtual std::expected<void, config::NodeError> ConnectInput(
+      std::shared_ptr<Node> source) override;
 
   /**
    * @brief The ONE thing this class must do: fetch bytes from disk.

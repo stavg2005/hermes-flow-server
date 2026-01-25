@@ -13,9 +13,12 @@ struct DelayNode : Node, IAudioProcessor {
 
   explicit DelayNode(Node* t = nullptr);
 
+  DelayNode(size_t ms_delay);
   IAudioProcessor* AsAudio() override;
   std::expected<void, config::NodeError> ProcessFrame(
       std::span<uint8_t> frame_buffer) override;
   std::expected<void, config::NodeError> Close() override;
+  virtual std::expected<void, config::NodeError> ConnectInput(
+      std::shared_ptr<Node> source) override;
 };
 }  // namespace hermes::audio

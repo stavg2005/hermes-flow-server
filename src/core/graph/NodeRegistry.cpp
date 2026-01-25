@@ -76,11 +76,7 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> CreateDelay(
       })
 
       .transform([](float delay_sec) {
-        auto node = std::make_shared<DelayNode>();
-        node->delay_ms_ = delay_sec * 1000;
-        node->total_frames_ =
-            static_cast<int>(node->delay_ms_ / FRAME_DURATION);
-        return node;
+        return std::make_shared<DelayNode>(delay_sec);
       });
 }
 

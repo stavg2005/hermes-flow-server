@@ -1,0 +1,141 @@
+// HttpStreamer.hpp
+#pragma once
+
+#include <algorithm>
+#include <boost/asio/connect.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/awaitable.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+#include <expected>
+#include <string>
+#include <utility>
+#include <spdlog/spdlog.h>
+#include "Concepts.hpp"
+#include "BufferPool.hpp"
+#include "Types.hpp"
+
+namespace hermes::net::http {
+
+namespace beast = boost::beast;
+namespace http = beast::http;
+namespace asio = boost::asio;
+using tcp = asio::ip::tcp;
+
+class HttpStreamer {
+public:
+    explicit HttpStreamer(asio::io_context& ioc)
+        : ioc_(ioc), resolver_(ioc), stream_(ioc) {}
+
+    template <typename Body, typename Fields, config::AsyncWriteStream Sink>
+    asio::awaitable<std::expected<void, config::ErrorInfo>>
+    Execute(const std::string& host,
+            const std::string& port,
+            http::request<Body, Fields> req,
+            Sink& destination) {
+
+
+        stream_.expires_after(std::chrono::seconds(30));
+        auto connect_res = co_await Connect(host, port);
+        if (!connect_res) co_return std::unexpected(connect_res.error());
+
+
+        stream_.expires_after(std::chrono::seconds(30));
+        co_await http::async_write(stream_, req, asio::use_awaitable);
+
+
+        beast::flat_buffer buffer;
+        http::response_parser<http::empty_body> parser;
+        parser.body_limit(2ULL * 1024 * 1024 * 1024); // 2GB Limit
+
+        co_await http::async_read_header(stream_, buffer, parser, asio::use_awaitable);
+
+
+        if (parser.get().result() != http::status::ok) {
+            co_return co_await HandleErrorResponse(std::move(parser), buffer);
+        }
+
+
+        auto expected_size = GetContentLength(parser.get());
+
+
+        stream_.expires_never();
+        co_return co_await StreamToSink(destination, buffer, expected_size);
+    }
+
+private:
+    asio::io_context& ioc_;
+    tcp::resolver resolver_;
+    beast::tcp_stream stream_;
+
+    asio::awaitable<std::expected<void, config::ErrorInfo>> Connect(const std::string& host, const std::string& port) {
+        try {
+            auto results = co_await resolver_.async_resolve(host, port, asio::use_awaitable);
+            co_await stream_.async_connect(results, asio::use_awaitable);
+            co_return std::expected<void, config::ErrorInfo>();
+        } catch (const boost::system::system_error& e) {
+            co_return std::unexpected(config::ErrorInfo::From(config::AppError::NetworkError, "Connect failed: " + std::string(e.what())));
+        }
+    }
+
+    template <typename Parser>
+    asio::awaitable<std::unexpected<config::ErrorInfo>> HandleErrorResponse(Parser&& parser, beast::flat_buffer& buffer) {
+        // Drain the rest of the body to get the error message
+        http::response_parser<http::string_body> error_parser(std::move(parser));
+        co_await http::async_read(stream_, buffer, error_parser, asio::use_awaitable);
+
+        std::string error_body = error_parser.get().body();
+        int status = error_parser.get().result_int();
+
+        spdlog::error("HTTP Request Failed [{}]: {}", status, error_body);
+        co_return std::unexpected(config::ErrorInfo::From(config::AppError::NetworkError,
+            "HTTP Error " + std::to_string(status) + ": " + error_body));
+    }
+
+    size_t GetContentLength(const http::response_header<>& header) {
+        if (auto it = header.find(http::field::content_length); it != header.end()) {
+            return std::stoull(std::string(it->value()));
+        }
+        return 0;
+    }
+
+    template <config::AsyncWriteStream Sink>
+    asio::awaitable<std::expected<void, config::ErrorInfo>>
+    StreamToSink(Sink& sink, beast::flat_buffer& buffer, size_t expected_size) {
+        size_t total_written = 0;
+
+        // Write whatever was already read into the buffer during header parsing
+        if (buffer.size() > 0) {
+            total_written += co_await asio::async_write(sink, buffer.data(), asio::use_awaitable);
+            buffer.consume(buffer.size());
+        }
+
+        auto shared_buf = infra::BufferPool::Instance().Acquire(512 * 1024);
+
+        while (true) {
+            size_t bytes_read = 0;
+            try {
+                bytes_read = co_await stream_.async_read_some(
+                    asio::buffer(*shared_buf), asio::use_awaitable);
+            } catch (const boost::system::system_error& e) {
+                if (e.code() == asio::error::eof) break;
+                co_return std::unexpected(config::ErrorInfo::From(config::AppError::NetworkError, "Stream read error: " + std::string(e.what())));
+            }
+
+            if (bytes_read == 0) break;
+
+            co_await asio::async_write(sink, asio::buffer(*shared_buf, bytes_read), asio::use_awaitable);
+            total_written += bytes_read;
+        }
+
+        // Basic validation
+        if (expected_size > 0 && total_written != expected_size) {
+             co_return std::unexpected(config::ErrorInfo::From(config::AppError::NetworkError,
+                "Download truncated. Expected: " + std::to_string(expected_size) + ", Got: " + std::to_string(total_written)));
+        }
+
+        co_return std::expected<void, config::ErrorInfo>();
+    }
+};
+
+} // namespace hermes::net::http

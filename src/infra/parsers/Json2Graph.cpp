@@ -30,114 +30,125 @@ std::expected<T, ErrorInfo> require_json(const json::object& obj,
         "Invalid type for key '" + std::string(key) + "': " + e.what()));
   }
 }
-
-std::expected<Graph, ErrorInfo> parse_graph(boost::asio::io_context& io,
-                                            const json::object& o) {
-  Graph g{};
-
-  // 1. Parse Root Objects
-  auto flow_res = require_json<json::object>(o, "flow");
-  if (!flow_res) return std::unexpected(flow_res.error());
-  const json::object& flow_obj = *flow_res;
-
-  auto nodes_res = require_json<json::array>(flow_obj, "nodes");
-  if (!nodes_res) return std::unexpected(nodes_res.error());
-  const json::array& nodes_arr = *nodes_res;
-
-  auto edges_res = require_json<json::array>(flow_obj, "edges");
-  if (!edges_res) return std::unexpected(edges_res.error());
-  const json::array& edges_arr = *edges_res;
-
-  // --- Phase 1: Create Nodes ---
+// --- Chapter 1: Create the Nodes ---
+std::expected<void, config::ErrorInfo> ParseNodes(boost::asio::io_context& io,
+                                                  const json::array& nodes_arr,
+                                                  audio::Graph& graph) {
   for (const auto& v : nodes_arr) {
-    if (!v.is_object()) {
+    if (!v.is_object())
       return std::unexpected(
-          ErrorInfo::From(AppError::ParseError, "Node must be a JSON object"));
-    }
-    const auto& node_obj = v.as_object();
+          ErrorInfo::From(AppError::ParseError, "Node must be an object"));
 
-    auto id_res = require_json<std::string>(node_obj, "id");
-    if (!id_res) return std::unexpected(id_res.error());
-    std::string id = *id_res;
+    const auto& obj = v.as_object();
 
-    auto type_res = require_json<std::string>(node_obj, "type");
-    if (!type_res) return std::unexpected(type_res.error());
-    std::string type = *type_res;
+    // 1. Extraction
+    auto id = require_json<std::string>(obj, "id");
+    auto type = require_json<std::string>(obj, "type");
+    auto data = require_json<json::object>(obj, "data");
 
-    auto data_res = require_json<json::object>(node_obj, "data");
-    if (!data_res) return std::unexpected(data_res.error());
-    const auto& data = *data_res;
-
-    // Create Node via Factory
-    auto node_result = NodeFactory::Instance().Create(type, io, data);
-    if (!node_result) {
-      return std::unexpected(node_result.error());
+    if (!id || !type || !data) {
+      return std::unexpected(id ? (type ? data.error() : type.error())
+                                : id.error());
     }
 
-    auto new_node = std::move(*node_result);
-    new_node->id_ = id;
-    g.node_map[id] = new_node;
-    g.nodes.push_back(std::move(new_node));
+    // 2. Creation
+    auto node_res = audio::NodeFactory::Instance().Create(*type, io, *data);
+    if (!node_res) {
+      return std::unexpected(node_res.error());
+    }
+
+    auto node = std::move(*node_res);
+
+    // 3. Storage
+    node->SetId(*id);
+    graph.node_map[*id] = node;
+    graph.nodes.push_back(std::move(node));
   }
+  return {};
+}
 
-  // --- Phase 2: Set Start Node ---
+// --- Chapter 2: Set Start Node ---
+std::expected<void, config::ErrorInfo> SetStartNode(
+    const json::object& flow_obj, audio::Graph& graph) {
   auto start_obj_res = require_json<json::object>(flow_obj, "start_node");
-  if (!start_obj_res) return std::unexpected(start_obj_res.error());
+  if (!start_obj_res) {
+    return std::unexpected(start_obj_res.error());
+  }
 
-  auto start_id_res = require_json<std::string>(*start_obj_res, "id");
-  if (!start_id_res) return std::unexpected(start_id_res.error());
-  std::string start_id = *start_id_res;
+  auto id_res = require_json<std::string>(*start_obj_res, "id");
+  if (!id_res) {
+    return std::unexpected(id_res.error());
+  }
 
-  if (!g.node_map.contains(start_id)) {
+  if (!graph.node_map.contains(*id_res)) {
     return std::unexpected(ErrorInfo::From(
-        AppError::ParseError, "Start node ID not found: " + start_id));
+        AppError::ParseError, "Start node ID not found: " + *id_res));
   }
-  g.start_node = g.node_map.at(start_id).get();
 
-  // --- Phase 3: Link Edges ---
+  graph.start_node = graph.node_map.at(*id_res);
+  return {};
+}
+
+// --- Chapter 3: Wire the Edges ---
+std::expected<void, config::ErrorInfo> ParseEdges(const json::array& edges_arr,
+                                                  audio::Graph& graph) {
+  using namespace config;
+
   for (const auto& v : edges_arr) {
-    if (!v.is_object()) {
-      return std::unexpected(
-          ErrorInfo::From(AppError::ParseError, "Edge must be a JSON object"));
+    const auto& edge = v.as_object();
+
+    // 1. Lookup
+    std::string src_id = std::string(edge.at("source").as_string());
+    std::string tgt_id = std::string(edge.at("target").as_string());
+
+    if (!graph.node_map.contains(src_id) || !graph.node_map.contains(tgt_id)) {
+      return std::unexpected(ErrorInfo::From(
+          AppError::ParseError, "Edge references missing node ID"));
     }
-    const auto& edge_obj = v.as_object();
 
-    auto src_res = require_json<std::string>(edge_obj, "source");
-    if (!src_res) return std::unexpected(src_res.error());
-    std::string source_id = *src_res;
+    auto src_node = graph.node_map[src_id];
+    auto tgt_node = graph.node_map[tgt_id];
 
-    auto tgt_res = require_json<std::string>(edge_obj, "target");
-    if (!tgt_res) return std::unexpected(tgt_res.error());
-    std::string target_id = *tgt_res;
+    // 2. Logic Check (Pre-flight)
+    if (src_node->Kind() == audio::NodeKind::Clients) {
+      return std::unexpected(ErrorInfo::From(
+          AppError::ParseError, "ClientsNode cannot be a source."));
+    }
 
-    // Validate Existence
-    if (!g.node_map.contains(source_id))
-      return std::unexpected(ErrorInfo::From(AppError::ParseError,
-                                             "Missing source: " + source_id));
-    if (!g.node_map.contains(target_id))
-      return std::unexpected(ErrorInfo::From(AppError::ParseError,
-                                             "Missing target: " + target_id));
-
-    auto source = g.node_map.at(source_id);
-    auto target = g.node_map.at(target_id);
-
-    // Special case: Options nodes are not audio sources.
-    if (source->kind_ == NodeKind::FileOptions &&
-        target->kind_ == NodeKind::FileInput) {
-      auto opt = std::dynamic_pointer_cast<FileOptionsNode>(source);
-      auto inp = std::dynamic_pointer_cast<FileInputNode>(target);
-      if (opt && inp) inp->SetOptions(opt);
-    } else {
-      source->target_ = target.get();
-      if (target->kind_ == NodeKind::Mixer &&
-          source->kind_ == NodeKind::FileInput) {
-        auto mixer = std::dynamic_pointer_cast<MixerNode>(target);
-        auto input = std::dynamic_pointer_cast<FileInputNode>(source);
-        if (mixer && input) mixer->AddInput(input.get());
-      }
+    // 3. Polymorphic Connect
+    auto result = tgt_node->ConnectInput(src_node);
+    if (!result) {
+      return std::unexpected(
+          ErrorInfo::From(AppError::ParseError, result.error().message));
     }
   }
+  return {};
+}
 
-  return g;
+std::expected<audio::Graph, config::ErrorInfo> parse_graph(
+    boost::asio::io_context& io, const json::object& o) {
+  audio::Graph graph{};
+
+  return require_json<json::object>(o, "flow")
+      .and_then(
+          [&](const json::object& flow) -> std::expected<void, ErrorInfo> {
+            //  Get Nodes Array -> ParseNodes
+            return require_json<json::array>(flow, "nodes")
+                .and_then([&](const json::array& nodes) {
+                  return ParseNodes(io, nodes, graph);
+                })
+
+                // Set Start Node
+                .and_then([&] { return SetStartNode(flow, graph); })
+
+                //  Get Edges Array -> ParseEdges
+                .and_then(
+                    [&] { return require_json<json::array>(flow, "edges"); })
+                .and_then([&](const json::array& edges) {
+                  return ParseEdges(edges, graph);
+                });
+          })
+
+      .transform([&] { return std::move(graph); });
 }
 }  // namespace hermes::infra

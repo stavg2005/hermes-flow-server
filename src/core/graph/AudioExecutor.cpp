@@ -1,9 +1,11 @@
 #include "core/graph/AudioExecutor.hpp"
 
 #include <algorithm>
+#include <expected>
 #include <filesystem>
 #include <vector>
 
+#include "FileSink.hpp"
 #include "Nodes.hpp"
 #include "core/graph/Node.hpp"
 #include "network/s3/S3Session.hpp"
@@ -18,10 +20,10 @@ namespace hermes::audio {
 AudioExecutor::AudioExecutor(boost::asio::io_context& io,
                              std::shared_ptr<Graph> graph)
     : io_(io), graph_(std::move(graph)) {
-  if (!graph_ || !graph_->start_node) {
+  if (!graph_ || !graph_->start_node.lock() ) {
     throw std::runtime_error("Invalid graph: missing start node.");
   }
-  current_node_ = graph_->start_node;
+  current_node_ = graph_->start_node.lock();
 }
 
 SessionStats& AudioExecutor::GetStats() { return stats_; }
@@ -37,19 +39,23 @@ AudioExecutor::Prepare() {
 
   // 1. Ensure all physical assets exist on disk (S3 Download)
   auto fetch_res = co_await EnsureAssetsExist();
-  if (!fetch_res) co_return std::unexpected(fetch_res.error());
+  if (!fetch_res) {
+    co_return std::unexpected(fetch_res.error());
+  }
 
   // 2. Initialize buffers for any node that needs async setup
   //    (Now handled generically via IAsyncInitializer interface)
   auto init_res = co_await InitializeNodes();
-  if (!init_res) co_return std::unexpected(init_res.error());
+  if (!init_res) {
+    co_return std::unexpected(init_res.error());
+  }
 
   // 3. Configure Mixers
   UpdateMixers();
 
   // 4. Reset Stats
-  current_node_ = graph_->start_node;
-  stats_.current_node_id = current_node_->id_;
+  current_node_ = graph_->start_node.lock();
+  stats_.current_node_id = current_node_->Id();
   stats_.total_bytes_sent = 0;
 
   co_return std::expected<void, config::ErrorInfo>();
@@ -59,37 +65,59 @@ boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
 AudioExecutor::EnsureAssetsExist() {
   spdlog::info("Checking asset availability...");
 
+  // Optimization: Hold the session here so we reuse it across multiple files
+  std::shared_ptr<net::s3::S3Session> s3_session = nullptr;
+
   for (const auto& node : graph_->nodes) {
-    // Only FileInputNodes need physical files
-    if (node->kind_ == NodeKind::FileInput) {
-      // Safe static cast because we checked kind_
-      auto* file_node = static_cast<FileInputNode*>(node.get());
-
-      if (std::filesystem::exists(file_node->file_path_)) {
-        continue;
-      }
-
-      spdlog::info("File missing: {}. Requesting from S3...",
-                   file_node->file_name_);
-
-      auto session_result = S3Session::Create(io_);
-      if (!session_result) {
-        co_return Error(config::AppError::NetworkError,
-                        "Failed to create S3Session: {}",
-                        session_result.error().message);
-      }
-
-      auto s3_session = std::move(*session_result);
-      auto download_result =
-          co_await s3_session->RequestFile(file_node->file_name_);
-
-      if (!download_result) {
-        co_return Error(config::AppError::FileSystemError,
-                        "S3 Download failed: {}",
-                        download_result.error().message);
-      }
+    // 1. Filter Logic (Cleaner early exit)
+    if (node->Kind() != NodeKind::FileInput) {
+      continue;
     }
+
+    auto* file_node = static_cast<FileInputNode*>(node.get());
+
+    if (std::filesystem::exists(file_node->file_path_)) {
+      continue;
+    }
+
+    spdlog::info("File missing: {}. Requesting from S3...",
+                 file_node->file_name_);
+
+    if (!s3_session) {
+      auto session_result = net::s3::S3Session::Create(io_);
+      if (!session_result) {
+        co_return std::unexpected(config::ErrorInfo::From(
+            config::AppError::NetworkError,
+            "Failed to create S3Session: " + session_result.error().message));
+      }
+      s3_session = std::move(*session_result);
+    }
+
+    infra::FileSink sink(io_);
+
+    if (auto res = sink.Prepare(file_node->file_path_); !res) {
+      co_return std::unexpected(config::ErrorInfo::From(
+          config::AppError::FileSystemError,
+          "Failed to prepare file sink: " +
+              res.error()  // Assuming string error
+          ));
+    }
+
+    // 5. Download
+    auto download_result =
+        co_await s3_session->RequestFile(file_node->file_name_, sink);
+
+    if (!download_result) {
+      co_return std::unexpected(config::ErrorInfo::From(
+          config::AppError::NetworkError,
+          "S3 Download failed: " + download_result.error().message));
+    }
+
+    sink.Commit();
+
+    spdlog::info("Successfully downloaded: {}", file_node->file_name_);
   }
+
   co_return std::expected<void, config::ErrorInfo>();
 }
 
@@ -100,7 +128,7 @@ AudioExecutor::InitializeNodes() {
   for (const auto& node : graph_->nodes) {
     // Check if this node implements IAsyncInitializer (e.g. AsyncAudioSource)
     if (auto* async_node = dynamic_cast<IAsyncInitializer*>(node.get())) {
-      spdlog::debug("Initializing buffers for node [{}]", node->id_);
+      spdlog::debug("Initializing buffers for node [{}]", node->Id());
       co_await async_node->InitializeBuffers();
     }
   }
@@ -109,7 +137,7 @@ AudioExecutor::InitializeNodes() {
 
 void AudioExecutor::UpdateMixers() {
   for (const auto& node : graph_->nodes) {
-    if (node->kind_ == NodeKind::Mixer) {
+    if (node->Kind() == NodeKind::Mixer) {
       if (auto* mixer = dynamic_cast<MixerNode*>(node.get())) {
         mixer->SetMaxFrames();
       }
@@ -119,8 +147,9 @@ void AudioExecutor::UpdateMixers() {
 
 std::pair<bool, config::NodeError> AudioExecutor::GetNextFrame(
     std::span<uint8_t> output_buffer) {
-  if (!current_node_)
+  if (current_node_ != nullptr) {
     return {false, config::NodeError{config::NodeErrorCode::Success, "", ""}};
+  }
 
   // Clear buffer before processing
   std::fill(output_buffer.begin(), output_buffer.end(), 0);
@@ -146,25 +175,23 @@ std::pair<bool, config::NodeError> AudioExecutor::GetNextFrame(
     bool is_eos =
         (!result && result.error().code == config::NodeErrorCode::EndOfStream);
 
+    ;
 
-    bool limit_reached =
-        (current_node_->processed_frames_ >= current_node_->total_frames_) &&
-        (current_node_->total_frames_ > 0);
-
-    if (is_eos || limit_reached) {
+    if (is_eos || current_node_->IsComplete()) {
       auto close_result = audio_node->Close();
       if (!close_result) {
         return {false, close_result.error()};
       }
 
       spdlog::info(
-          "Node [{}] finished. Transitioning to [{}]", current_node_->id_,
-          current_node_->target_ ? current_node_->target_->id_ : "END");
+          "Node [{}] finished. Transitioning to [{}]", current_node_->Id(),
+          current_node_->Next() != nullptr ? current_node_->Next()->Id()
+                                           : "END");
 
-      current_node_ = current_node_->target_;
+      current_node_ = current_node_->Next();
 
-      if (current_node_) {
-        stats_.current_node_id = current_node_->id_;
+      if (current_node_ != nullptr) {
+        stats_.current_node_id = current_node_->Id();
       }
     }
 

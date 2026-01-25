@@ -73,7 +73,7 @@ class AudioExecutor {
   }
   boost::asio::io_context& io_;
   std::shared_ptr<audio::Graph> graph_;
-  Node* current_node_ = nullptr;
+  std::shared_ptr<Node> current_node_ = nullptr;
   service::SessionStats stats_;
 };
 };  // namespace hermes::audio

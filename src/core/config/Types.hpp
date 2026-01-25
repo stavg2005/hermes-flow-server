@@ -58,6 +58,12 @@ struct ErrorInfo {
   static ErrorInfo From(AppError code, std::string msg) {
     return {code, std::move(msg)};
   }
+
+  template <typename... Args>
+  static ErrorInfo From(AppError code, std::format_string<Args...> fmt,
+                        Args&&... args) {
+    return ErrorInfo{code, std::format(fmt, std::forward<Args>(args)...)};
+  }
 };
 
 inline std::string_view to_string(NodeErrorCode err) {

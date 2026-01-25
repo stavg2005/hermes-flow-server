@@ -6,24 +6,26 @@
 #include <span>
 
 #include "Node.hpp"
-#include "infra/audio/DoubleBuffer.hpp"
 #include "core/config/Types.hpp"
+#include "infra/audio/DoubleBuffer.hpp"
+
 
 namespace hermes::audio {
 
 class AsyncAudioSource : public Node,
                          public IAudioProcessor,
-                         public IAsyncInitializer,
-                         public std::enable_shared_from_this<AsyncAudioSource> {
+                         public IAsyncInitializer {
  protected:
   boost::asio::io_context& io_;
   hermes::infra::DoubleBuffer bf_;
 
   /**
-   * @brief PURE VIRTUAL: Child must implement how to fetch bytes (Disk/Network).
+   * @brief PURE VIRTUAL: Child must implement how to fetch bytes
+   * (Disk/Network).
    * @return Number of bytes actually read.
    */
-  virtual boost::asio::awaitable<size_t> FetchBytes(std::span<uint8_t> dest) = 0;
+  virtual boost::asio::awaitable<size_t> FetchBytes(
+      std::span<uint8_t> dest) = 0;
 
  public:
   explicit AsyncAudioSource(boost::asio::io_context& io);
@@ -39,7 +41,8 @@ class AsyncAudioSource : public Node,
   /**
    * @brief Reads from the buffer. If empty, swaps and triggers async refill.
    */
-  std::expected<void, config::NodeError> ProcessFrame(std::span<uint8_t> buffer) override;
+  std::expected<void, config::NodeError> ProcessFrame(
+      std::span<uint8_t> buffer) override;
 
   IAudioProcessor* AsAudio() override;
 

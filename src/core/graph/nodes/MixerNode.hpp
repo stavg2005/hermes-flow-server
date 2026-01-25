@@ -22,6 +22,8 @@ struct MixerNode : Node, IAudioProcessor {
       std::span<uint8_t> frame_buffer) override;
   std::expected<void, config::NodeError> Close() override;
 
+  virtual std::expected<void, config::NodeError> ConnectInput(
+      std::shared_ptr<Node> source) override;
   // Specific Methods
   void SetMaxFrames();
   void AddInput(FileInputNode* node);

@@ -6,7 +6,6 @@
 
 #include "core/config/Config.hpp"
 
-
 namespace hermes::audio {
 
 AsyncAudioSource::AsyncAudioSource(boost::asio::io_context& io) : io_(io) {}
@@ -52,7 +51,8 @@ std::expected<void, config::NodeError> AsyncAudioSource::ProcessFrame(
 
     boost::asio::co_spawn(
         io_,
-        [self = shared_from_this()]() -> boost::asio::awaitable<void> {
+        [self = std::static_pointer_cast<AsyncAudioSource>(
+             shared_from_this())]() -> boost::asio::awaitable<void> {
           try {
             // Fetch bytes into the write (back) buffer
             co_await self->FetchBytes(self->bf_.GetWriteSpan());
@@ -68,7 +68,6 @@ std::expected<void, config::NodeError> AsyncAudioSource::ProcessFrame(
 
   if (total_frames_ > 0 && processed_frames_ >= total_frames_) {
     std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
-
 
     if (processed_frames_ > total_frames_) {
       // Bypass the Error() helper to avoid spdlog calls

@@ -1,0 +1,51 @@
+#pragma once
+#include <cstdint>
+#include <cmath>
+#include <algorithm>
+#include <span>
+#include <vector>
+
+namespace hermes::audio {
+
+class AudioMath {
+public:
+    static constexpr float MAX_INT16 = 32767.0f;
+    static constexpr int32_t CLIP_LIMIT = 30000;
+
+    /**
+     * @brief Adds a source buffer into an accumulator buffer.
+     * Performs: acc[i] += input[i]
+     */
+    static void SumBuffers(std::span<int32_t> accumulator, std::span<const int16_t> input) {
+        // This loop is a prime candidate for SIMD optimization (AVX/SSE) later
+        // without changing the MixerNode code.
+        for (size_t i = 0; i < accumulator.size() && i < input.size(); ++i) {
+            accumulator[i] += input[i];
+        }
+    }
+
+    /**
+     * @brief Compresses a 32-bit accumulated sample into a 16-bit PCM sample
+     * using hyperbolic tangent (tanh) for soft clipping.
+     */
+    static int16_t SoftClip(int32_t sample) {
+        if (sample > CLIP_LIMIT || sample < -CLIP_LIMIT) {
+            float compressed = std::tanh(static_cast<float>(sample) / MAX_INT16);
+            return static_cast<int16_t>(compressed * MAX_INT16);
+        }
+        return static_cast<int16_t>(sample);
+    }
+
+    /**
+     * @brief Batch processes an accumulator into an output buffer.
+     */
+    static void CompressAndExport(std::span<const int32_t> accumulator, std::span<uint8_t> output_bytes) {
+        auto* out_samples = reinterpret_cast<int16_t*>(output_bytes.data());
+        size_t count = output_bytes.size() / sizeof(int16_t);
+
+        for (size_t i = 0; i < count; ++i) {
+            out_samples[i] = SoftClip(accumulator[i]);
+        }
+    }
+};
+}

@@ -157,12 +157,15 @@ set(SOURCES_INFRA
 # Network
 set(SOURCES_NETWORK
     src/network/s3/S3Session.cpp
+    src/network/s3/S3RequestFactory.cpp
+    src/network/s3/AwsSigner.cpp
     src/network/rtp/Packet.cpp
     src/network/rtp/RTPPacketizer.cpp
     src/network/http/HttpSession.cpp
     src/network/http/Listener.cpp
     src/network/http/Router.cpp
     src/network/http/Server.cpp
+
 )
 
 # Core
