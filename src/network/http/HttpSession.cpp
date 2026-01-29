@@ -67,7 +67,7 @@ asio::awaitable<void> HttpSession::do_session() {
         ResponseBuilder::build_error_response(
             err_res, "Invalid Request: " + read_result.error().message, 11,
             false, beast::http::status::bad_request);
-        //we specificly dont check for error here because if there is an error that means the client can no logner recive messeges  so i dosent matter
+        //we specificly dont check for error here because if there is an error that means the client can no logner recive messeges  so it dosent matter
         co_await do_write_response(err_res);
 
         break;
@@ -150,7 +150,7 @@ asio::awaitable<std::expected<void, ErrorInfo>> HttpSession::do_write_response(
       tcp::no_delay(true),
       ec);  // Ignore error here, it's optional optimization
 
-  // Write
+  
   co_await beast::http::async_write(stream_, res,
                              asio::redirect_error(asio::use_awaitable, ec));
 

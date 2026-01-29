@@ -13,7 +13,7 @@
 #include "Types.hpp"
 namespace hermes::audio {
 using NodeCreatorSignature =
-    std::expected<std::shared_ptr<Node>, config::ErrorInfo>(
+    std::expected<std::unique_ptr<Node>, config::ErrorInfo>(
         boost::asio::io_context&, const boost::json::object&);
 using NodeCreator = std::function<NodeCreatorSignature>;
 
@@ -23,7 +23,7 @@ concept IsNodeCreator = requires(F f, boost::asio::io_context& io,
   {
     f(io, data)
   } -> std::convertible_to<
-      std::expected<std::shared_ptr<Node>, config::ErrorInfo>>;
+      std::expected<std::unique_ptr<Node>, config::ErrorInfo>>;
 };
 
 /**
@@ -44,12 +44,10 @@ class NodeFactory {
   template <typename Creator>
     requires IsNodeCreator<Creator>
   void register_creator(const std::string& type, Creator&& creator) {
-    // We still store it as std::function (type erasure), but we've verified it
-    // works
     creators_[type] = std::forward<Creator>(creator);
   }
 
-  std::expected<std::shared_ptr<Node>, config::ErrorInfo> create(
+  std::expected<std::unique_ptr<Node>, config::ErrorInfo> create(
       const std::string& type, boost::asio::io_context& io,
       const boost::json::object& data) {
     auto it = creators_.find(type);

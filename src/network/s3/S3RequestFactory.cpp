@@ -8,16 +8,7 @@
 using namespace hermes::config;
 namespace hermes::net::s3 {
 
-// Helper for Thread-Safe Time
-std::tm S3RequestFactory::get_safe_gmtime(std::time_t timer) {
-  std::tm tm_snapshot;
-#if defined(_WIN32)
-  gmtime_s(&tm_snapshot, &timer);
-#else
-  gmtime_r(&timer, &tm_snapshot);
-#endif
-  return tm_snapshot;
-}
+
 
 http::request<http::empty_body> S3RequestFactory::create_signed_get_request(
     const S3Config& cfg, http::verb method, std::string file_key) {
@@ -38,7 +29,7 @@ http::request<http::empty_body> S3RequestFactory::create_signed_get_request(
   }
 
 
-  auto signed_headers = AwsSigner::Sign(cfg, method, full_host, canonical_uri);
+  auto signed_headers = AwsSigner::sign(cfg, method, full_host, canonical_uri);
 
 
   http::request<http::empty_body> req{method, canonical_uri, 11};

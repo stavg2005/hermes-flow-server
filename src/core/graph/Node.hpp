@@ -38,8 +38,7 @@ struct IAsyncInitializer {
   virtual ~IAsyncInitializer() = default;
 };
 
-// Base Node
-struct Node : public std::enable_shared_from_this<Node> {
+struct Node {
  public:
   explicit Node(Node* next = nullptr);
   virtual ~Node() = default;
@@ -47,10 +46,8 @@ struct Node : public std::enable_shared_from_this<Node> {
   [[nodiscard]] std::string_view id() const { return id_; }
   [[nodiscard]] NodeKind kind() const { return kind_; }
 
-  [[nodiscard]] std::shared_ptr<Node> next() const { return target_.lock(); }
-  void set_next(std::shared_ptr<Node> target) {
-    target_ = target;
-  }  // Explicit rewiring
+  [[nodiscard]] Node* next() const { return target_; }
+  void set_next(Node* target) { target_ = target; }  // Explicit rewiring
 
   int get_total_frames() const { return total_frames_; }
   void set_total_frames(int frames) { total_frames_ = frames; }
@@ -68,29 +65,23 @@ struct Node : public std::enable_shared_from_this<Node> {
     in_buffer_processed_frames_ = 0;
   }
 
-  // --- 3. Polymorphic Interfaces ---
   virtual IAudioProcessor* as_audio();
-  virtual std::expected<void, config::NodeError> connect_input(
-      std::shared_ptr<Node> source);
-  void wire_standard(std::shared_ptr<Node> source);
+  virtual std::expected<void, config::NodeError> connect_input(Node* source);
+  void wire_standard(Node* source);
 
  protected:
-  // Protected: Subclasses (Mixer, FileInput) needs direct access for
-  // performance
   std::string id_;
   NodeKind kind_;
-  std::weak_ptr<Node> target_;
+  Node* target_;
 
   int processed_frames_{0};
   int total_frames_{0};
   int in_buffer_processed_frames_{0};
 
-  // Helper for error logging
   template <typename... Args>
   std::unexpected<config::NodeError> error(config::NodeErrorCode code,
                                            std::format_string<Args...> fmt,
                                            Args&&... args) const {
-    // ... implementation same as before ...
     std::string msg = std::format(fmt, std::forward<Args>(args)...);
     spdlog::error("[{}] {}", id_, msg);
     return std::unexpected(config::NodeError{code, msg, id_});
@@ -98,8 +89,8 @@ struct Node : public std::enable_shared_from_this<Node> {
 };
 
 struct Graph {
-  std::vector<std::shared_ptr<Node>> nodes;
-  std::unordered_map<std::string, std::shared_ptr<Node>> node_map;
-  std::weak_ptr<Node> start_node;
+  std::vector<std::unique_ptr<Node>> nodes;
+  std::unordered_map<std::string, Node*> node_map;
+  Node* start_node;
 };
 }  // namespace hermes::audio

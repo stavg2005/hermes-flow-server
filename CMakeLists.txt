@@ -174,10 +174,7 @@ set(SOURCES_CORE
     src/core/session/Session.cpp
     src/core/graph/NodeRegistry.cpp
     src/core/graph/Node.cpp
-    src/core/graph/nodes/ClientsNode.cpp
-     src/core/graph/nodes/DelayNode.cpp
      src/core/graph/nodes/FileInputNode.cpp
-     src/core/graph/nodes/FileOptionsNode.cpp
      src/core/graph/nodes/MixerNode.cpp
      src/core/graph/nodes/AsyncAudioSource.cpp
     src/core/graph/AudioExecutor.cpp

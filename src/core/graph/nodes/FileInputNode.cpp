@@ -4,17 +4,17 @@
 
 #include <algorithm>
 #include <chrono>
+#include <expected>
 
+#include "FileSink.hpp"
+#include "S3Session.hpp"
+#include "Types.hpp"
 #include "core/config/Config.hpp"
 #include "infra/audio/WavUtils.hpp"
 
 using namespace hermes::config;
 
 namespace hermes::audio {
-
-// =========================================================
-//  Constructor & Lifecycle
-// =========================================================
 
 FileInputNode::FileInputNode(boost::asio::io_context& io, std::string name,
                              std::string path)
@@ -132,26 +132,60 @@ void FileInputNode::apply_effects(std::span<uint8_t> frame_buffer) {
   }
 }
 
-// =========================================================
-//  Options & Configuration
-// =========================================================
+boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
+FileInputNode::ensure_file_exists() {
+  if (std::filesystem::exists(file_path_)) {
+    co_return std::expected<void, config::ErrorInfo>{};
+  }
 
-void FileInputNode::set_options(std::shared_ptr<FileOptionsNode> options_node) {
-  options_ = std::move(options_node);
+  spdlog::info("File missing: {}. Requesting from S3...", file_name_);
+
+  auto session_result = hermes::net::s3::S3Session::create(io_);
+  if (!session_result) {
+    co_return std::unexpected(config::ErrorInfo::From(
+        config::AppError::NetworkError,
+        "Failed to create S3Session: " + session_result.error().message));
+  }
+  auto s3_session = std::move(*session_result);
+
+  infra::FileSink sink(io_);
+
+  if (auto res = sink.Prepare(file_path_); !res) {
+    co_return std::unexpected(
+        config::ErrorInfo::From(config::AppError::FileSystemError,
+                                "Failed to prepare file sink: " + res.error()));
+  }
+
+  auto download_result = co_await s3_session->request_file(file_name_, sink);
+
+  if (!download_result) {
+    co_return std::unexpected(config::ErrorInfo::From(
+        config::AppError::NetworkError,
+        "S3 Download failed: " + download_result.error().message));
+  }
+
+  sink.Commit();
+
+  spdlog::info("Successfully downloaded: {}", file_name_);
+  co_return std::expected<void, config::ErrorInfo>{};
+}
+
+void FileInputNode::set_options(FileOptionsNode* options_node) {
+  options_ = options_node;
   if (options_) {
     spdlog::info("[{}] Set gain option: {}", file_name_, options_->gain);
   }
 }
 
 std::expected<void, config::NodeError> FileInputNode::connect_input(
-    std::shared_ptr<Node> source) {
+    Node* source) {
   if (source->kind() == NodeKind::Mixer) {
     return error(config::NodeErrorCode::FormatError,
                  "FileInput cannot receive input from Mixer.");
   }
 
   if (source->kind() == NodeKind::FileOptions) {
-    auto options = std::dynamic_pointer_cast<FileOptionsNode>(source);
+    auto* options = dynamic_cast<FileOptionsNode*>(source);
     set_options(options);
     //  We do NOT call WireStandard here.
     // Options are "side-loaded" config, not an upstream audio source.

@@ -17,8 +17,7 @@ public:
      * Performs: acc[i] += input[i]
      */
     static void sum_buffers(std::span<int32_t> accumulator, std::span<const int16_t> input) {
-        // This loop is a prime candidate for SIMD optimization (AVX/SSE) later
-        // without changing the MixerNode code.
+
         for (size_t i = 0; i < accumulator.size() && i < input.size(); ++i) {
             accumulator[i] += input[i];
         }

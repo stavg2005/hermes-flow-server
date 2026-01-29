@@ -44,7 +44,7 @@ std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
 
   auto session = std::make_shared<Session>(io, session_id, std::move(g));
 
-  // Register Thread-Safely
+
   {
     std::lock_guard<std::mutex> lock(mutex_);
     sessions_[session_id] = std::move(session);

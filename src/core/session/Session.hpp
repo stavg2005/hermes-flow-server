@@ -125,7 +125,7 @@ class Session : public std::enable_shared_from_this<Session> {
   std::string id_;
   std::atomic<bool> is_running_{false};
 
-  std::shared_ptr<Graph> graph_;
+  std::unique_ptr<Graph> graph_;
   std::unique_ptr<AudioExecutor> audio_executor_;
   std::unique_ptr<RTPStreamer> streamer_;
 

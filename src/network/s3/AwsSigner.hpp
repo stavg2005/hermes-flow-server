@@ -27,13 +27,13 @@ class AwsSigner {
    * @param uri_path The absolute path (e.g., "/my-file.wav").
    * @return A struct containing the computed headers.
    */
-  static SignedRequestHeaders Sign(const config::S3Config& cfg,
+  static SignedRequestHeaders sign(const config::S3Config& cfg,
                                    boost::beast::http::verb method,
                                    const std::string& host,
                                    const std::string& uri_path);
 
  private:
-  static std::tm GetSafeGmtime(std::time_t timer);
+  static std::tm get_safe_gmtime(std::time_t timer);
 };
 
 }  // namespace hermes::net::s3

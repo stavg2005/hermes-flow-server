@@ -48,7 +48,7 @@ static void SetupLogging() {
   spdlog::flush_on(spdlog::level::debug);
 }
 
-// Application entry point. Sets up logging, config, and starts the server.
+
 int main(int argc, char* argv[]) {
   // Safety net for unexpected runtime crashes (e.g. std::bad_alloc)
   try {

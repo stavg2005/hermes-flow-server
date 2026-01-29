@@ -9,11 +9,10 @@
 #include "BufferPool.hpp"
 #include "spdlog/spdlog.h"
 
-// Core/Infra includes
 #include "CodecStrategy.hpp"
 #include "Config.hpp"
 
-// Local RTP includes
+
 #include "Packet.hpp"
 #include "PacketUtils.hpp"
 #include "RTPPacketizer.hpp"

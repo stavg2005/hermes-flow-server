@@ -30,7 +30,7 @@ std::expected<T, ErrorInfo> require_json(const json::object& obj,
         "Invalid type for key '" + std::string(key) + "': " + e.what()));
   }
 }
-// --- Chapter 1: Create the Nodes ---
+
 std::expected<void, config::ErrorInfo> ParseNodes(boost::asio::io_context& io,
                                                   const json::array& nodes_arr,
                                                   audio::Graph& graph) {
@@ -61,13 +61,12 @@ std::expected<void, config::ErrorInfo> ParseNodes(boost::asio::io_context& io,
 
     // 3. Storage
     node->set_id(*id);
-    graph.node_map[*id] = node;
+    graph.node_map[*id] = node.get();
     graph.nodes.push_back(std::move(node));
   }
   return {};
 }
 
-// --- Chapter 2: Set Start Node ---
 std::expected<void, config::ErrorInfo> SetStartNode(
     const json::object& flow_obj, audio::Graph& graph) {
   auto start_obj_res = require_json<json::object>(flow_obj, "start_node");
@@ -89,7 +88,6 @@ std::expected<void, config::ErrorInfo> SetStartNode(
   return {};
 }
 
-// --- Chapter 3: Wire the Edges ---
 std::expected<void, config::ErrorInfo> ParseEdges(const json::array& edges_arr,
                                                   audio::Graph& graph) {
   using namespace config;
@@ -109,13 +107,11 @@ std::expected<void, config::ErrorInfo> ParseEdges(const json::array& edges_arr,
     auto src_node = graph.node_map[src_id];
     auto tgt_node = graph.node_map[tgt_id];
 
-    // 2. Logic Check (Pre-flight)
     if (src_node->kind() == audio::NodeKind::Clients) {
       return std::unexpected(ErrorInfo::From(
           AppError::ParseError, "ClientsNode cannot be a source."));
     }
 
-    // 3. Polymorphic Connect
     auto result = tgt_node->connect_input(src_node);
     if (!result) {
       return std::unexpected(
@@ -132,16 +128,13 @@ std::expected<audio::Graph, config::ErrorInfo> parse_graph(
   return require_json<json::object>(o, "flow")
       .and_then(
           [&](const json::object& flow) -> std::expected<void, ErrorInfo> {
-            //  Get Nodes Array -> ParseNodes
             return require_json<json::array>(flow, "nodes")
                 .and_then([&](const json::array& nodes) {
                   return ParseNodes(io, nodes, graph);
                 })
 
-                // Set Start Node
                 .and_then([&] { return SetStartNode(flow, graph); })
 
-                //  Get Edges Array -> ParseEdges
                 .and_then(
                     [&] { return require_json<json::array>(flow, "edges"); })
                 .and_then([&](const json::array& edges) {

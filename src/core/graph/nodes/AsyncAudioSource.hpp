@@ -31,13 +31,13 @@ class AsyncAudioSource : public Node,
   explicit AsyncAudioSource(boost::asio::io_context& io);
   virtual ~AsyncAudioSource() = default;
 
-  // --- IAsyncInitializer Implementation ---
+
   /**
    * @brief Pre-fills both front and back buffers before playback starts.
    */
   boost::asio::awaitable<void> initialize_buffers() override;
 
-  // --- IAudioProcessor Implementation ---
+ 
   /**
    * @brief Reads from the buffer. If empty, swaps and triggers async refill.
    */
@@ -46,7 +46,7 @@ class AsyncAudioSource : public Node,
 
   IAudioProcessor* as_audio() override;
 
-  // --- Optional Hooks ---
+
   virtual void apply_effects(std::span<uint8_t> buffer) {}
   virtual size_t get_read_offset(std::span<uint8_t> buffer) { return 0; }
 };

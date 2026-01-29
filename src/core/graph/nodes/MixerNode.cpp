@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <ranges>
+#include <typeinfo>
 
 #include "AudioMath.hpp"
 #include "Config.hpp"
@@ -20,18 +21,18 @@ IAudioProcessor* MixerNode::as_audio() { return this; }
 
 void MixerNode::set_max_frames() {
   int max = 0;
-  for (auto* node : inputs_) {
-    max = std::max(max, node->get_total_frames());
+  for (auto& source : inputs_) {
+    max = std::max(max, source.node->get_total_frames());
   }
   total_frames_ = max;
   spdlog::info("Mixer total frames set to: {}", max);
 }
 
-void MixerNode::add_input(FileInputNode* node) { inputs_.push_back(node); }
+void MixerNode::add_input(FileInputNode* node) {
+  inputs_.push_back({node, node});
+}
 
-std::expected<void, NodeError> MixerNode::connect_input(
-    std::shared_ptr<Node> source) {
-  // 1. Check Restrictions
+std::expected<void, NodeError> MixerNode::connect_input(Node* source) {
   if (source->kind() == NodeKind::Mixer) {
     return error(config::NodeErrorCode::FormatError,
                  "Mixer cannot connect to another Mixer.");
@@ -42,7 +43,6 @@ std::expected<void, NodeError> MixerNode::connect_input(
                  "Mixer cannot accept ClientsNode as input.");
   }
 
-  // 2. Check Allow List
   bool is_valid = (source->kind() == NodeKind::Delay ||
                    source->kind() == NodeKind::FileInput);
 
@@ -55,23 +55,20 @@ std::expected<void, NodeError> MixerNode::connect_input(
   // node can be that since delay cant be mixed but can still be connected do
   // delay for garph traversal
   if (source->kind() == NodeKind::FileInput) {
-    auto input = std::dynamic_pointer_cast<FileInputNode>(source);
-    inputs_.push_back(input.get());
+    auto* input = dynamic_cast<FileInputNode*>(source);
+    inputs_.push_back({input, input});
   }
 
-  // Also do standard graph wiring (so execution flows from source -> mixer)
   wire_standard(source);
 
   return {};
 }
 
 std::expected<void, NodeError> MixerNode::close() {
-  for (auto* input : inputs_) {
-    if (auto* audio = input->as_audio()) {
-      auto result = audio->close();
-      if (!result) {
-        return std::unexpected<NodeError>(result.error());
-      }
+  for (auto& source : inputs_) {
+    auto result = source.audio->close();
+    if (!result) {
+      return std::unexpected<NodeError>(result.error());
     }
   }
   in_buffer_processed_frames_ = 0;
@@ -84,24 +81,22 @@ std::expected<void, NodeError> MixerNode::process_frame(
   accumulator_.fill(0);
   bool has_active_inputs = false;
 
-  for (auto* input_node : inputs_) {
-    if (auto* audio_source = dynamic_cast<IAudioProcessor*>(input_node)) {
-      auto result = audio_source->process_frame(temp_input_buffer_);
-      if (!result) {
-        // Handle non-critical errors (Underrun, EOS) by skipping
-        if (result.error().code == NodeErrorCode::Critical)
-          return std::unexpected(result.error());
-        continue;
-      }
-
-      has_active_inputs = true;
-
-      auto input_samples =
-          std::span(reinterpret_cast<const int16_t*>(temp_input_buffer_.data()),
-                    SAMPLES_PER_FRAME);
-
-      AudioMath::sum_buffers(accumulator_, input_samples);
+  for (auto& source : inputs_) {
+    auto result = source.audio->process_frame(temp_input_buffer_);
+    if (!result) {
+      // Handle non-critical errors (Underrun, EOS) by skipping
+      if (result.error().code == NodeErrorCode::Critical)
+        return std::unexpected(result.error());
+      continue;
     }
+
+    has_active_inputs = true;
+
+    auto input_samples =
+        std::span(reinterpret_cast<const int16_t*>(temp_input_buffer_.data()),
+                  SAMPLES_PER_FRAME);
+
+    AudioMath::sum_buffers(accumulator_, input_samples);
   }
 
   if (!has_active_inputs) {

@@ -20,8 +20,8 @@ Session::Session(asio::io_context& io, std::string id, Graph&& g)
     : io_(io),
       id_(std::move(id)),
       timer_(io),
-      graph_(std::make_shared<Graph>(std::move(g))) {
-  audio_executor_ = std::make_unique<AudioExecutor>(io_, graph_);
+      graph_(std::make_unique<Graph>(std::move(g))) {
+  audio_executor_ = std::make_unique<AudioExecutor>(io_, *graph_);
   streamer_ = std::make_unique<RTPStreamer>(io_);
 
   spdlog::debug("Session [{}] created.", id_);
@@ -85,7 +85,7 @@ asio::awaitable<void> Session::start() {
     } catch (const boost::system::system_error& e) {
       if (e.code() == boost::asio::error::operation_aborted) {
         spdlog::debug("[{}] Timer cancelled, stopping loop.", id_);
-        break;  // Exit the loop gracefully
+        break;
       }
       throw;  // Rethrow real errors
     }

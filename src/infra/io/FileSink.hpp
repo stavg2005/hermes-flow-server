@@ -12,11 +12,11 @@ class FileSink {
  public:
   explicit FileSink(boost::asio::io_context& ioc) : file_(ioc) {}
 
-  // Movable (enabled by unique_ptr)
+
   FileSink(FileSink&&) = default;
   FileSink& operator=(FileSink&&) = default;
 
-  // Destructor: CRITICAL ORDERING
+
   ~FileSink() {
     boost::system::error_code ec;
     file_.close(ec);
@@ -25,13 +25,13 @@ class FileSink {
   std::expected<void, std::string> Prepare(const std::filesystem::path& path) {
     boost::system::error_code ec;
 
-    // 1. Create Parent Directories
+
     if (auto parent = path.parent_path(); !parent.empty()) {
       std::filesystem::create_directories(parent, ec);
       if (ec) return std::unexpected("Dir error: " + ec.message());
     }
 
-    // 2. Open the Async Stream File
+    
     file_.open(path.string(),
                boost::asio::stream_file::write_only |
                    boost::asio::stream_file::create |

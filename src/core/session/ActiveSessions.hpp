@@ -78,7 +78,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
   boost::uuids::random_generator generator_;
 
 
-  // All session storage is guarded by mutex_
+ 
   std::unordered_map<std::string, std::shared_ptr<Session>> sessions_;
   std::unordered_map<std::string,
                      std::shared_ptr<net::websocket::WebSocketSession>>

@@ -51,15 +51,14 @@ std::expected<void, config::NodeError> AsyncAudioSource::process_frame(
 
     boost::asio::co_spawn(
         io_,
-        [self = std::static_pointer_cast<AsyncAudioSource>(
-             shared_from_this())]() -> boost::asio::awaitable<void> {
+        [this]() -> boost::asio::awaitable<void> {
           try {
             // Fetch bytes into the write (back) buffer
-            co_await self->fetch_bytes(self->bf_.get_write_span());
+            co_await this->fetch_bytes(this->bf_.get_write_span());
             // Mark ready so the audio thread can swap to it later
-            self->bf_.back_buffer_ready_ = true;
+            this->bf_.back_buffer_ready_ = true;
           } catch (const std::exception& e) {
-            spdlog::error("Async refill failed for node {}: {}", self->id_,
+            spdlog::error("Async refill failed for node {}: {}", this->id_,
                           e.what());
           }
         },
@@ -92,7 +91,6 @@ std::expected<void, config::NodeError> AsyncAudioSource::process_frame(
 
     apply_effects(src_span);
 
-    // Copy to output buffer
     std::copy(src_span.begin(), src_span.end(), frame_buffer.begin());
   }
 

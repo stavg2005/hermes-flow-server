@@ -11,7 +11,7 @@
 
 namespace hermes::net::s3 {
 
-std::tm AwsSigner::GetSafeGmtime(std::time_t timer) {
+std::tm AwsSigner::get_safe_gmtime(std::time_t timer) {
   std::tm tm_snapshot;
 #if defined(_WIN32)
   gmtime_s(&tm_snapshot, &timer);
@@ -21,12 +21,12 @@ std::tm AwsSigner::GetSafeGmtime(std::time_t timer) {
   return tm_snapshot;
 }
 
-SignedRequestHeaders AwsSigner::Sign(const config::S3Config& cfg,
+SignedRequestHeaders AwsSigner::sign(const config::S3Config& cfg,
                                      boost::beast::http::verb method,
                                      const std::string& host,
                                      const std::string& uri_path) {
   std::time_t now = std::time(nullptr);
-  std::tm timeinfo = GetSafeGmtime(now);
+  std::tm timeinfo = get_safe_gmtime(now);
 
   // 1. Initialize the low-level signer
   aws_sigv4::Signature signer(cfg.service, host, cfg.region, cfg.secret_key,

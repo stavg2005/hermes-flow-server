@@ -15,9 +15,6 @@
 #include "boost/json/object.hpp"
 using namespace hermes::config;
 using namespace hermes::audio;
-// =========================================================
-//  Helpers
-// =========================================================
 
 namespace hermes::audio {
 
@@ -42,11 +39,7 @@ std::expected<T, ErrorInfo> require(const json::object& ojson,
   }
 }
 
-// =========================================================
-//  Factory Creation Functions
-// =========================================================
-
-std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_input(
+std::expected<std::unique_ptr<Node>, ErrorInfo> create_file_input(
     boost::asio::io_context& io, const json::object& data) {
   auto name_res = require<std::string>(data, "fileName");
   if (!name_res) return std::unexpected(name_res.error());
@@ -56,15 +49,15 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_input(
 
   // TODO: Add path traversal check here if needed (AppError::FileSystemError)
 
-  return std::make_shared<FileInputNode>(io, name, path);
+  return std::make_unique<FileInputNode>(io, name, path);
 }
 
-std::expected<std::shared_ptr<Node>, ErrorInfo> create_mixer(
+std::expected<std::unique_ptr<Node>, ErrorInfo> create_mixer(
     boost::asio::io_context&, const json::object&) {
-  return std::make_shared<MixerNode>();
+  return std::make_unique<MixerNode>();
 }
 
-std::expected<std::shared_ptr<Node>, ErrorInfo> create_delay(
+std::expected<std::unique_ptr<Node>, ErrorInfo> create_delay(
     boost::asio::io_context&, const json::object& data) {
   return require<float>(data, "delay")
       .and_then([](float delay_sec) -> std::expected<float, ErrorInfo> {
@@ -76,13 +69,13 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> create_delay(
       })
 
       .transform([](float delay_sec) {
-        return std::make_shared<DelayNode>(delay_sec);
+        return std::make_unique<DelayNode>(delay_sec);
       });
 }
 
-std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_options(
+std::expected<std::unique_ptr<Node>, ErrorInfo> create_file_options(
     boost::asio::io_context&, const json::object& data) {
-  auto node = std::make_shared<FileOptionsNode>();
+  auto node = std::make_unique<FileOptionsNode>();
 
   auto gain_res = require<double>(data, "gain");
   if (!gain_res) return std::unexpected(gain_res.error());
@@ -91,7 +84,7 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_options(
   return node;
 }
 
-std::expected<std::shared_ptr<Node>, ErrorInfo> create_clients(
+std::expected<std::unique_ptr<Node>, ErrorInfo> create_clients(
     boost::asio::io_context&, const json::object& data) {
   auto node = std::make_unique<ClientsNode>();
 

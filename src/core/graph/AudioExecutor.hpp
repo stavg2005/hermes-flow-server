@@ -10,10 +10,7 @@
 #include "ISessionObserver.hpp"
 #include "Node.hpp"
 namespace hermes::audio {
-/**
- * @brief Executes the audio graph. Handles asset loading and the main
- * processing loop
- */
+
 class AudioExecutor {
  public:
   /**
@@ -21,8 +18,7 @@ class AudioExecutor {
    * @param io The IO context for async file operations.
    * @param graph The audio graph structure containing nodes and edges.
    */
-  AudioExecutor(boost::asio::io_context& io,
-                std::shared_ptr<audio::Graph> graph);
+  AudioExecutor(boost::asio::io_context& io, const Graph& graph);
 
   /**
    * @return A reference to the stats object used by Observers (e.g.,
@@ -72,8 +68,8 @@ class AudioExecutor {
     return std::unexpected(config::ErrorInfo::From(code, msg));
   }
   boost::asio::io_context& io_;
-  std::shared_ptr<audio::Graph> graph_;
-  std::shared_ptr<Node> current_node_ = nullptr;
+  const Graph& graph_;
+  Node* current_node_ = nullptr;
   service::SessionStats stats_;
 };
 };  // namespace hermes::audio

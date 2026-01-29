@@ -5,9 +5,7 @@
 #include <string>
 
 #include "AsyncAudioSource.hpp"
-
-// Forward declaration if needed, or include the header
-#include "nodes/FileOptionsNode.hpp"
+#include "BasicNodes.hpp"
 
 namespace hermes::audio {
 
@@ -20,7 +18,7 @@ struct FileInputNode : public AsyncAudioSource {
   std::string file_name_;
   std::string file_path_;
   boost::asio::stream_file file_handle_;
-  std::shared_ptr<FileOptionsNode> options_;
+  FileOptionsNode* options_;
 
   // WAV Header Parsing State
   bool is_first_read_ = true;
@@ -29,10 +27,11 @@ struct FileInputNode : public AsyncAudioSource {
   explicit FileInputNode(boost::asio::io_context& io, std::string name,
                          std::string path);
 
-  // --- AsyncAudioSource Implementations ---
+  boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
+  ensure_file_exists();
 
   virtual std::expected<void, config::NodeError> connect_input(
-      std::shared_ptr<Node> source) override;
+      Node* source) override;
 
   /**
    * @brief The ONE thing this class must do: fetch bytes from disk.
@@ -50,15 +49,13 @@ struct FileInputNode : public AsyncAudioSource {
    */
   size_t get_read_offset(std::span<uint8_t> buffer) override;
 
-  // --- Lifecycle Overrides ---
-
   std::expected<void, config::NodeError> open();
   std::expected<void, config::NodeError> close() override;
 
   /**
    * @brief Link the options node (Gain).
    */
-  void set_options(std::shared_ptr<FileOptionsNode> options_node);
+  void set_options(FileOptionsNode* options_node);
 };
 
 }  // namespace hermes::audio

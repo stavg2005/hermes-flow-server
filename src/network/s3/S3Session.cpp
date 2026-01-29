@@ -7,25 +7,21 @@
 using namespace hermes::config;
 namespace hermes::net::s3 {
 
-// ============================================================================
-// Constructor
-// ============================================================================
+
 S3Session::S3Session(boost::asio::io_context& ioc, S3Config cfg)
     : ioc_(ioc), cfg_(std::move(cfg)) {}
 
-// ============================================================================
-// Factory Implementation
-// ============================================================================
+
 std::expected<std::shared_ptr<S3Session>,ErrorInfo>
 S3Session::create(boost::asio::io_context& ioc,
                   const S3Config& manual_cfg) {
   S3Config final_config = manual_cfg;
 
-  // If no config provided, load from disk
+
   if (final_config.access_key.empty()) {
     spdlog::debug("[S3Session] No config provided, loading from config.toml");
 
-    // Assuming LoadConfig returns expected<Config, ErrorInfo>
+    
     auto config_result =load_config("../config.toml");
 
     if (!config_result) {
