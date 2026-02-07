@@ -4,6 +4,7 @@
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
+#include <memory>
 #include <stdexcept>
 
 #include "Json2Graph.hpp"
@@ -13,22 +14,15 @@
 using namespace hermes::audio;
 using namespace hermes::infra;
 namespace hermes::service {
-ActiveSessions::ActiveSessions(std::shared_ptr<IoContextPool> pool)
-    : pool_(std::move(pool)) {}
+ActiveSessions::ActiveSessions(IoContextPool& pool) : pool_(pool) {}
 
 std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
     const boost::json::object& jobj) {
-  if (!pool_) {
-    spdlog::critical("ActiveSessions: IoContextPool is null!");
-    return std::unexpected(ErrorInfo::From(
-        AppError::Critical, "Server not initialized: IoContextPool is null"));
-  }
-
   boost::uuids::uuid uuid = generator_();
   std::string session_id = boost::uuids::to_string(uuid);
   spdlog::debug("Creating session with ID: {}", session_id);
 
-  boost::asio::io_context& io = pool_->get_io_context();
+  boost::asio::io_context& io = pool_.get_io_context();
 
   auto graph_result =
       parse_graph(io, jobj).transform_error([session_id](const auto& err) {
@@ -41,9 +35,8 @@ std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
 
   spdlog::debug("Graph parsed for session {}. Node count: {}", session_id,
                 g.nodes.size());
-
+  spdlog::debug("start node in active session {}", g.start_node->id());
   auto session = std::make_shared<Session>(io, session_id, std::move(g));
-
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -78,7 +71,7 @@ std::expected<void, ErrorInfo> ActiveSessions::create_and_run_websocket_session(
   websocket->do_accept(req);
 
   session->attach_observer(
-      std::make_shared<WebSocketSessionObserver>(websocket));
+      std::make_unique<WebSocketSessionObserver>(websocket));
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -87,7 +80,7 @@ std::expected<void, ErrorInfo> ActiveSessions::create_and_run_websocket_session(
   }
 
   asio::co_spawn(
-      pool_->get_io_context(),
+      pool_.get_io_context(),
       [this, self = shared_from_this(), id = audio_session_id,
        sess = session]() -> asio::awaitable<void> {
         // sess->start() handles its own logic errors now, but we keep the

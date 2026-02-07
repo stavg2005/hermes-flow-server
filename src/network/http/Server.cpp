@@ -8,7 +8,7 @@
 using namespace hermes::service;
 using namespace hermes::net::http;
 namespace hermes::net {
-std::expected<std::shared_ptr<Server>, ErrorInfo> Server::create(
+std::expected<std::unique_ptr<Server>, ErrorInfo> Server::create(
     boost::asio::io_context& main_ioc, const std::string& address,
     const std::string& port, unsigned int threads) {
   auto pool_result = IoContextPool::create(threads);
@@ -17,8 +17,8 @@ std::expected<std::shared_ptr<Server>, ErrorInfo> Server::create(
   }
   auto pool = std::move(*pool_result);
 
-  auto active_sessions = std::make_shared<ActiveSessions>(pool);
-  auto router = std::make_shared<Router>(active_sessions, pool);
+  auto active_sessions = std::make_shared<ActiveSessions>(*pool);
+  auto router = std::make_shared<Router>(*active_sessions, pool);
 
   boost::asio::ip::tcp::endpoint endpoint;
   try {
@@ -31,13 +31,13 @@ std::expected<std::shared_ptr<Server>, ErrorInfo> Server::create(
                         "Invalid Address/Port: " + std::string(e.what())));
   }
 
-  auto listener_result = Listener::create(main_ioc, pool, endpoint, router);
+  auto listener_result = Listener::create(main_ioc, *pool, endpoint, router);
   if (!listener_result) {
     return std::unexpected(listener_result.error());
   }
   auto listener = std::move(*listener_result);
 
-  auto server = std::shared_ptr<Server>(
+  auto server = std::unique_ptr<Server>(
       new Server(main_ioc, std::move(pool), std::move(active_sessions),
                  std::move(router), std::move(listener)));
 

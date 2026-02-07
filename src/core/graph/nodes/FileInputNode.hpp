@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/asio/stream_file.hpp>
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -18,7 +19,7 @@ struct FileInputNode : public AsyncAudioSource {
   std::string file_name_;
   std::string file_path_;
   boost::asio::stream_file file_handle_;
-  FileOptionsNode* options_;
+  FileOptionsNode* options_ = nullptr;
 
   // WAV Header Parsing State
   bool is_first_read_ = true;

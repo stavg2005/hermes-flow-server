@@ -26,7 +26,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
  public:
   using req_t = http::request<http::string_body>;
 
-  explicit ActiveSessions(std::shared_ptr<IoContextPool> pool);
+  explicit ActiveSessions(IoContextPool& pool);
 
   /**
    * @brief Factory method to spawn a new Audio Session.
@@ -57,15 +57,12 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
   enum class RemoveStatus { Success, SessionNotFound, WebSocketNotFound };
   RemoveStatus remove_session(const std::string& id);
 
-
   std::shared_ptr<Session> get(const std::string& id) const;
   std::vector<std::string> list_ids() const;
   std::size_t size() const noexcept;
 
-
   void stop_all();
   void on_session_stopped(const std::string& id);
-
 
   ActiveSessions(const ActiveSessions&) = delete;
   ActiveSessions& operator=(const ActiveSessions&) = delete;
@@ -73,12 +70,10 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
  private:
   mutable std::mutex mutex_;
 
-  std::shared_ptr<IoContextPool> pool_;
+  IoContextPool& pool_;
   std::atomic<int64_t> next_session_id_{0};
   boost::uuids::random_generator generator_;
 
-
- 
   std::unordered_map<std::string, std::shared_ptr<Session>> sessions_;
   std::unordered_map<std::string,
                      std::shared_ptr<net::websocket::WebSocketSession>>

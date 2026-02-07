@@ -27,7 +27,7 @@ Session::Session(asio::io_context& io, std::string id, Graph&& g)
   spdlog::debug("Session [{}] created.", id_);
 }
 
-void Session::attach_observer(std::shared_ptr<ISessionObserver> observer) {
+void Session::attach_observer(std::unique_ptr<ISessionObserver> observer) {
   observer_ = std::move(observer);
   spdlog::info("[{}] Observer attached.", id_);
 }
@@ -67,7 +67,7 @@ asio::awaitable<void> Session::start() {
   }
 
   configure_streamer_from_graph();
-
+  spdlog::debug("hellooooooooo");
   auto next_tick = std::chrono::steady_clock::now();
   auto last_stats_time = std::chrono::steady_clock::now();
   std::array<uint8_t, FRAME_SIZE_BYTES> pcm_buffer;
@@ -77,6 +77,7 @@ asio::awaitable<void> Session::start() {
   exit_reason.code = NodeErrorCode::Success;
 
   while (is_running_) {
+
     next_tick += std::chrono::milliseconds(20);
     timer_.expires_at(next_tick);
     try {
@@ -95,11 +96,12 @@ asio::awaitable<void> Session::start() {
 
     if (!is_status_ok(status.code)) {
       exit_reason.code = status.code;
-      break;  // Stop immediately on critical error
+      break; 
     }
 
     if (!executor_wants_continue) {
       // Natural finish (exit_reason remains Success)
+      spdlog::info("execter didnt want to continue bruh");
       break;
     }
 

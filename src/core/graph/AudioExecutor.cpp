@@ -19,9 +19,10 @@ namespace hermes::audio {
 
 AudioExecutor::AudioExecutor(boost::asio::io_context& io, const Graph& graph)
     : io_(io), graph_(graph) {
-  if (!graph_.start_node) {
+  if (graph_.start_node == nullptr) {
     throw std::runtime_error("Invalid graph: missing start node.");
   }
+  spdlog::debug("start node in adiou execture {}", graph.start_node->id());
   current_node_ = graph_.start_node;
 }
 
@@ -31,7 +32,7 @@ boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
 AudioExecutor::prepare() {
   spdlog::info("Preparing Audio Graph...");
 
-  if (!current_node_) {
+  if (current_node_ == nullptr) {
     co_return error(config::AppError::LogicError,
                     "Invalid Graph: No start node");
   }
@@ -49,6 +50,7 @@ AudioExecutor::prepare() {
   update_mixers();
 
   current_node_ = graph_.start_node;
+  spdlog::debug("current node!!!: {}", graph_.start_node->id());
   stats_.current_node_id = current_node_->id();
   stats_.total_bytes_sent = 0;
 
@@ -100,11 +102,16 @@ void AudioExecutor::update_mixers() {
 
 std::pair<bool, config::NodeError> AudioExecutor::get_next_frame(
     std::span<uint8_t> output_buffer) {
-  if (current_node_ != nullptr) {
+  if (current_node_ == nullptr) {
+    spdlog::info("current node is null bruhhh");
     return {false, config::NodeError{config::NodeErrorCode::Success, "", ""}};
   }
 
   // Clear buffer before processing
+  if (output_buffer.empty()) {
+    return {false, config::NodeError{config::NodeErrorCode::FormatError,
+                                     "Output buffer is empty", ""}};
+  }
   std::fill(output_buffer.begin(), output_buffer.end(), 0);
 
   if (auto* audio_node = current_node_->as_audio()) {

@@ -52,7 +52,7 @@ struct DelayNode : Node, IAudioProcessor {
 
   explicit DelayNode(size_t ms_delay) {
     kind_ = NodeKind::Delay;
-    delay_ms_ = static_cast<float>(ms_delay) * 1000.0f;
+    delay_ms_ = static_cast<float>(ms_delay);
     // Calculation moves here. Ensure Config.hpp is included!
     total_frames_ = static_cast<int>(delay_ms_ / config::FRAME_DURATION);
   }

@@ -18,56 +18,63 @@ using namespace hermes::net::http;
 namespace hermes::net {
 
 std::expected<std::shared_ptr<Listener>, ErrorInfo> Listener::create(
-    asio::io_context& main_ioc, std::shared_ptr<IoContextPool> pool,
+    asio::io_context& main_ioc, IoContextPool& pool,
     const tcp::endpoint& endpoint, std::shared_ptr<Router> router) {
   tcp::acceptor acceptor(main_ioc);
 
-  auto run_step =
-      [&](auto operation,
-          const std::string& err_msg) -> std::expected<void, ErrorInfo> {
+  auto run_step = [&](auto operation, const std::string& err_msg)
+      -> std::expected<void, hermes::config::ErrorInfo> {
     beast::error_code ec;
     operation(ec);
     if (ec) {
-      return std::unexpected(ErrorInfo::From(AppError::NetworkError,
-                                             err_msg + ": " + ec.message()));
+      return std::unexpected(hermes::config::ErrorInfo::From(
+          AppError::NetworkError, err_msg + ": " + ec.message()));
     }
     return {};
   };
 
-  return run_step([&](auto& ec) { acceptor.open(endpoint.protocol(), ec); },
-                  "Open Failed")
-      .and_then([&] {
-        return run_step(
-            [&](auto& ec) {
-              acceptor.set_option(asio::socket_base::reuse_address(true), ec);
-            },
-            "SetOption Failed");
-      })
-      .and_then([&] {
-        return run_step([&](auto& ec) { acceptor.bind(endpoint, ec); },
-                        "Bind Failed");
-      })
-      .and_then([&] {
-        return run_step(
-            [&](auto& ec) {
-              acceptor.listen(asio::socket_base::max_listen_connections, ec);
-            },
-            "Listen Failed");
-      })
+  // We explicitly specify the return type of the chain to match the function
+  // signature
+  auto result =
+      run_step([&](auto& ec) { acceptor.open(endpoint.protocol(), ec); },
+               "Open Failed")
+          .and_then([&] {
+            return run_step(
+                [&](auto& ec) {
+                  acceptor.set_option(asio::socket_base::reuse_address(true),
+                                      ec);
+                },
+                "SetOption Failed");
+          })
+          .and_then([&] {
+            return run_step([&](auto& ec) { acceptor.bind(endpoint, ec); },
+                            "Bind Failed");
+          })
+          .and_then([&] {
+            return run_step(
+                [&](auto& ec) {
+                  acceptor.listen(asio::socket_base::max_listen_connections,
+                                  ec);
+                },
+                "Listen Failed");
+          })
+          .transform([&]() -> std::shared_ptr<Listener> {
+            spdlog::info("Listener bound to {}:{}",
+                         endpoint.address().to_string(), endpoint.port());
 
-      .transform([&] {
-        spdlog::info("Listener bound to {}:{}", endpoint.address().to_string(),
-                     endpoint.port());
-        return std::shared_ptr<Listener>(new Listener(
-            main_ioc, std::move(pool), std::move(acceptor), std::move(router)));
-      });
+            // Constructor takes (..., IoContextPool& pool, ...)
+            // We dereference the shared_ptr 'pool' to pass a reference.
+            return std::shared_ptr<Listener>(new Listener(
+                main_ioc, pool, std::move(acceptor), std::move(router)));
+          });
+
+  return result;
 }
 
-Listener::Listener(asio::io_context& main_ioc,
-                   std::shared_ptr<IoContextPool> pool,
+Listener::Listener(asio::io_context& main_ioc, IoContextPool& pool,
                    tcp::acceptor&& acceptor, std::shared_ptr<Router> router)
     : main_ioc_(main_ioc),
-      pool_(std::move(pool)),
+      pool_(pool),
       acceptor_(std::move(acceptor)),
       router_(std::move(router)) {}
 
@@ -83,7 +90,7 @@ void Listener::run() {
 asio::awaitable<std::expected<void, ErrorInfo>> Listener::do_accept() {
   try {
     for (;;) {
-      auto& pool_ioc = pool_->get_io_context();
+      auto& pool_ioc = pool_.get_io_context();
 
       auto [ec, socket] = co_await acceptor_.async_accept(
           pool_ioc, asio::as_tuple(asio::use_awaitable));

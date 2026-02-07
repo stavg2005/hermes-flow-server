@@ -5,6 +5,7 @@
 
 #include "NodeFactory.hpp"
 #include "Types.hpp"  // Ensure ErrorInfo/AppError are available
+#include "spdlog/spdlog.h"
 using namespace hermes::audio;
 using namespace hermes::infra;
 using namespace hermes::config;
@@ -85,6 +86,7 @@ std::expected<void, config::ErrorInfo> SetStartNode(
   }
 
   graph.start_node = graph.node_map.at(*id_res);
+  spdlog::debug("startn node in graph: {}", graph.start_node->id());
   return {};
 }
 

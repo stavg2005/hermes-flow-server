@@ -1,7 +1,7 @@
 
 
 services:
-  # --- 1. Your C++ Hermes Server ---
+
   hermes_server:
     build: .
     command: tail -f /dev/null
@@ -16,7 +16,7 @@ services:
       - S3_HOST=localhost
       - S3_PORT=9000
 
-  # --- 2. Your MinIO S3 Server ---
+
   minio:
     image: minio/minio
     ports:
@@ -29,6 +29,28 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
 
+  janus:
+    image: canyan/janus-gateway:latest
+    container_name: janus_gateway
+    restart: unless-stopped
+    ports:
+      - "8088:8088"  # HTTP API
+      - "8188:8188"  # WebSocket API
+      - "7088:7088"  # Admin API
+      - "10000-10200:10000-10200/udp" # RTP Media Ports (MUST match config)
+      - "5002:5002/udp"
+    volumes:
+      # Mount your configured local folder into the container
+      - ./janus_conf:/usr/local/etc/janus
+    command: ["/usr/local/bin/janus", "-F", "/usr/local/etc/janus"]
+
+  demo_viewer:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      # Maps your local 'demos' folder to the container's web root
+      - ./demos:/usr/share/nginx/html
 volumes:
   hermes_build_cache:
   minio_data:

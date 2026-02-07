@@ -146,7 +146,7 @@ FileInputNode::ensure_file_exists() {
         config::AppError::NetworkError,
         "Failed to create S3Session: " + session_result.error().message));
   }
-  auto s3_session = std::move(*session_result);
+  std::unique_ptr<hermes::net::s3::S3Session> s3_session(session_result.value());
 
   infra::FileSink sink(io_);
 

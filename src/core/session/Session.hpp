@@ -72,7 +72,7 @@ class Session : public std::enable_shared_from_this<Session> {
    * @param observer Shared pointer to an ISessionObserver (e.g.,
    * WebSocketSession).
    */
-  void attach_observer(std::shared_ptr<ISessionObserver> observer);
+  void attach_observer(std::unique_ptr<ISessionObserver> observer);
 
   /**
    * @brief Checks if the session is currently running.
@@ -130,6 +130,6 @@ class Session : public std::enable_shared_from_this<Session> {
   std::unique_ptr<RTPStreamer> streamer_;
 
   asio::steady_timer timer_;
-  std::shared_ptr<ISessionObserver> observer_;
+  std::unique_ptr<ISessionObserver> observer_;
 };
-}  // namespace hermese::service
+}  // namespace hermes::service

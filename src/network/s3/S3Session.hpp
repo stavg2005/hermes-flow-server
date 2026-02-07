@@ -23,12 +23,12 @@ namespace hermes::net::s3 {
  * 3. Delegate execution to HttpStreamer.
  * * Note: This class is agnostic to WHERE the data goes (File, Memory, Pipe).
  */
-class S3Session : public std::enable_shared_from_this<S3Session> {
+class S3Session {
  public:
   // Factory Method (Loads config if not provided)
-  static std::expected<std::shared_ptr<S3Session>, hermes::config::ErrorInfo>
-  create(boost::asio::io_context& ioc,
-         const hermes::config::S3Config& manual_cfg = {});
+  static std::expected<S3Session*, hermes::config::ErrorInfo> create(
+      boost::asio::io_context& ioc,
+      const hermes::config::S3Config& manual_cfg = {});
 
   /**
    * @brief Downloads a file from S3 to a generic Sink.
@@ -44,6 +44,7 @@ class S3Session : public std::enable_shared_from_this<S3Session> {
     auto req = S3RequestFactory::create_signed_get_request(
         cfg_, boost::beast::http::verb::get, file_key);
 
+    spdlog::debug("created the sing get request");
     http::HttpStreamer streamer(ioc_);
 
     auto result = co_await streamer.execute(cfg_.host, cfg_.port,

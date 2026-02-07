@@ -23,7 +23,7 @@ struct RouteError {
 
 class Router {
  public:
-  explicit Router(std::shared_ptr<hermes::service::ActiveSessions> active,
+  explicit Router(hermes::service::ActiveSessions& active,
                   std::shared_ptr<IoContextPool> pool);
 
   void route_query(const req_t& req, res_t& res,
@@ -41,7 +41,8 @@ class Router {
 
   std::expected<void, RouteError> handle_stop(const req_t& req, res_t& res);
 
-  std::shared_ptr<hermes::service::ActiveSessions> active_;
+  //Server owns both, and Server ensures Router dies before ActiveSessions.
+  hermes::service::ActiveSessions& active_;
   std::shared_ptr<IoContextPool> pool_;
 };
 }  // namespace hermes::net::http

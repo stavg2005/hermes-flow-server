@@ -49,6 +49,7 @@ std::expected<void, config::NodeError> AsyncAudioSource::process_frame(
     current_span = bf_.get_read_span();
     buffer_offset = 0;
 
+  
     boost::asio::co_spawn(
         io_,
         [this]() -> boost::asio::awaitable<void> {

@@ -35,12 +35,11 @@ beast::http::status map_app_error(AppError err) {
 
 // namespace
 
-Router::Router(std::shared_ptr<ActiveSessions> active,
-               std::shared_ptr<IoContextPool> pool)
-    : active_(std::move(active)), pool_(std::move(pool)) {}
+Router::Router(ActiveSessions& active, std::shared_ptr<IoContextPool> pool)
+    : active_(active), pool_(std::move(pool)) {}
 
 void Router::route_query(const req_t& req, res_t& res,
-                        boost::beast::tcp_stream& stream) {
+                         boost::beast::tcp_stream& stream) {
   // We maintain one try-catch ONLY for truly unexpected crashes
   try {
     boost::urls::url_view url{req.target()};
@@ -49,8 +48,7 @@ void Router::route_query(const req_t& req, res_t& res,
     auto match_route =
         [&](std::string_view prefix, beast::http::verb method,
             auto handler) -> std::optional<std::expected<void, RouteError>> {
-      if (!path.starts_with(prefix))
-        return std::nullopt;
+      if (!path.starts_with(prefix)) return std::nullopt;
 
       if (req.method() != method) {
         return std::unexpected(RouteError{
@@ -73,10 +71,8 @@ void Router::route_query(const req_t& req, res_t& res,
                                  [&] { return handle_stop(req, res); });
             });
 
-
     auto result = result_opt.value_or(std::unexpected(
         RouteError{beast::http::status::not_found, "Route not found"}));
-
 
     if (!result) {
       auto err = result.error();
@@ -110,7 +106,7 @@ std::expected<void, RouteError> Router::handle_transmit(const req_t& req,
                                       "JSON root must be an object"});
   }
 
-  auto result = active_->create_session(jv.as_object());
+  auto result = active_.create_session(jv.as_object());
 
   if (!result) {
     return std::unexpected(
@@ -132,7 +128,7 @@ std::expected<void, RouteError> Router::handle_stop(const req_t& req,
   }
 
   std::string id((*it)->value);
-  auto status = active_->remove_session(id);
+  auto status = active_.remove_session(id);
 
   using enum ActiveSessions::RemoveStatus;
 
@@ -168,7 +164,7 @@ std::expected<void, RouteError> Router::handle_websocket_request(
   std::string id((*it)->value);
   spdlog::info("Attaching WebSocket to session: {}", id);
 
-  auto result = active_->create_and_run_websocket_session(id, req, stream);
+  auto result = active_.create_and_run_websocket_session(id, req, stream);
 
   if (!result) {
     return std::unexpected(
