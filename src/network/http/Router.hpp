@@ -3,7 +3,7 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/beast.hpp>
 #include <boost/url/url_view.hpp>
-#include <expected>  // C++23
+#include <expected>
 #include <memory>
 
 #include "ActiveSessions.hpp"
@@ -27,7 +27,7 @@ class Router {
                   std::shared_ptr<IoContextPool> pool);
 
   void route_query(const req_t& req, res_t& res,
-                  boost::beast::tcp_stream& stream);
+                   boost::beast::tcp_stream& stream);
 
  private:
   // Handlers now return an expected result
@@ -39,9 +39,15 @@ class Router {
   std::expected<void, RouteError> handle_websocket_request(
       const req_t& req, res_t& res, boost::beast::tcp_stream& stream);
 
+  std::expected<void, RouteError> handle_webrtc_request(const req_t& req,
+                                                        res_t& res);
   std::expected<void, RouteError> handle_stop(const req_t& req, res_t& res);
-
-  //Server owns both, and Server ensures Router dies before ActiveSessions.
+  std::expected<void, RouteError> process_session_request(
+      const req_t& req, res_t& res, SessionType session_type,
+      std::string_view endpoint_name);
+  std::expected<void, RouteError> handle_pause(const req_t& req, res_t& res);
+  std::expected<void, RouteError> handle_resume(const req_t& req, res_t& res);
+  // Server owns both, and Server ensures Router dies before ActiveSessions.
   hermes::service::ActiveSessions& active_;
   std::shared_ptr<IoContextPool> pool_;
 };

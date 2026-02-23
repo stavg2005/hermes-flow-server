@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "Types.hpp"
+#include "deque"
 #include "spdlog/spdlog.h"
 using namespace hermes::config;
 namespace hermes::net::websocket {
@@ -19,7 +20,7 @@ namespace hermes::net::websocket {
 class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
   beast::websocket::stream<beast::tcp_stream> ws_;
   beast::flat_buffer buffer_;
-  std::vector<std::shared_ptr<std::string>> send_queue_;
+  std::deque<std::shared_ptr<std::string>> send_queue_;
   bool is_initialized_ = false;
 
  public:
@@ -105,7 +106,7 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
       return;
     }
 
-    send_queue_.erase(send_queue_.begin());
+    send_queue_.pop_front();
     if (!send_queue_.empty()) {
       do_write();
     }

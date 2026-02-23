@@ -39,7 +39,7 @@ std::expected<T, ErrorInfo> require(const json::object& ojson,
   }
 }
 
-std::expected<std::unique_ptr<Node>, ErrorInfo> create_file_input(
+std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_input(
     boost::asio::io_context& io, const json::object& data) {
   auto name_res = require<std::string>(data, "fileName");
   if (!name_res) return std::unexpected(name_res.error());
@@ -52,12 +52,12 @@ std::expected<std::unique_ptr<Node>, ErrorInfo> create_file_input(
   return std::make_unique<FileInputNode>(io, name, path);
 }
 
-std::expected<std::unique_ptr<Node>, ErrorInfo> create_mixer(
+std::expected<std::shared_ptr<Node>, ErrorInfo> create_mixer(
     boost::asio::io_context&, const json::object&) {
   return std::make_unique<MixerNode>();
 }
 
-std::expected<std::unique_ptr<Node>, ErrorInfo> create_delay(
+std::expected<std::shared_ptr<Node>, ErrorInfo> create_delay(
     boost::asio::io_context&, const json::object& data) {
   return require<float>(data, "delay")
       .and_then([](float delay_sec) -> std::expected<float, ErrorInfo> {
@@ -73,7 +73,7 @@ std::expected<std::unique_ptr<Node>, ErrorInfo> create_delay(
       });
 }
 
-std::expected<std::unique_ptr<Node>, ErrorInfo> create_file_options(
+std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_options(
     boost::asio::io_context&, const json::object& data) {
   auto node = std::make_unique<FileOptionsNode>();
 
@@ -84,7 +84,7 @@ std::expected<std::unique_ptr<Node>, ErrorInfo> create_file_options(
   return node;
 }
 
-std::expected<std::unique_ptr<Node>, ErrorInfo> create_clients(
+std::expected<std::shared_ptr<Node>, ErrorInfo> create_clients(
     boost::asio::io_context&, const json::object& data) {
   auto node = std::make_unique<ClientsNode>();
 

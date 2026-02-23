@@ -22,6 +22,8 @@ enum class NodeErrorCode : std::uint8_t {
   EndOfStream,
   FileIOError,
   FormatError,
+  InternalError,
+  InitializationFailed,
   Critical
 };
 
@@ -80,6 +82,13 @@ inline std::string_view to_string(NodeErrorCode err) {
       return "Json Format Error";
     case NodeErrorCode::Critical:
       return "Critical Error";
+    case NodeErrorCode::InternalError:
+      return "InternalError";
+    case NodeErrorCode::InitializationFailed:
+      return "InitializationFailed";
+
+    default:
+      return "Unknown Error";
   }
   return "Unknown Error";
 }

@@ -17,8 +17,9 @@ using namespace hermes::service;
 
 namespace hermes::audio {
 
-AudioExecutor::AudioExecutor(boost::asio::io_context& io, const Graph& graph)
-    : io_(io), graph_(graph) {
+AudioExecutor::AudioExecutor(boost::asio::io_context& io, const Graph& graph,
+                             config::S3Config& s3_config)
+    : io_(io), graph_(graph), s3_config_(std::move(s3_config)) {
   if (graph_.start_node == nullptr) {
     throw std::runtime_error("Invalid graph: missing start node.");
   }
@@ -67,7 +68,7 @@ AudioExecutor::ensure_assets_exist() {
     }
 
     auto* file_node = static_cast<FileInputNode*>(node.get());
-    auto results = co_await file_node->ensure_file_exists();
+    auto results = co_await file_node->ensure_file_exists(s3_config_);
     if (!results) {
       co_return std::unexpected<config::ErrorInfo>(results.error());
     }
@@ -103,7 +104,7 @@ void AudioExecutor::update_mixers() {
 std::pair<bool, config::NodeError> AudioExecutor::get_next_frame(
     std::span<uint8_t> output_buffer) {
   if (current_node_ == nullptr) {
-    spdlog::info("current node is null bruhhh");
+    spdlog::error("current node is null");
     return {false, config::NodeError{config::NodeErrorCode::Success, "", ""}};
   }
 

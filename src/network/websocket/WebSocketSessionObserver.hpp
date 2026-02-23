@@ -1,8 +1,10 @@
 #pragma once
 #include <boost/json.hpp>
+#include <cstdint>
 #include <string>
 
 #include "ISessionObserver.hpp"
+#include "Session.hpp"
 #include "WebSocketSession.hpp"
 
 using namespace hermes::net::websocket;
@@ -23,8 +25,20 @@ class WebSocketSessionObserver : public ISessionObserver {
       j["type"] = "stats";
       j["node"] = stats.current_node_id;
       j["bytes"] = stats.total_bytes_sent;
-
+      j["packets"] = stats.packets_sent;
+      j["underruns"] = stats.underruns;
       session->send(boost::json::serialize(j));
+    }
+  }
+
+  void on_webrtc_request(uint16_t& port) override {
+    if (auto session = ws_.lock()) {
+      boost::json::object response;
+      response["type"] = "webrtc_ready";
+      response["mountpoint_id"] = port;
+      response["message"] =
+          "Session created successfully. Watch this mountpoint.";
+      session->send(boost::json::serialize(response));
     }
   }
 

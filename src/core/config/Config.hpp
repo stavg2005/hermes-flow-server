@@ -8,14 +8,14 @@
 namespace hermes::config {
 
 // Assumptions: 8kHz Sampling Rate, 16-bit Mono PCM
-static constexpr size_t FRAME_DURATION = 20;       // Duration in ms
-static constexpr size_t SAMPLES_PER_FRAME = 160;   // 8000 Hz * 0.020 s
-static constexpr size_t BYTES_PER_SAMPLE = 2;      // 16-bit
+static constexpr size_t FRAME_DURATION = 20;      // Duration in ms
+static constexpr size_t SAMPLES_PER_FRAME = 160;  // 8000 Hz * 0.020 s
+static constexpr size_t BYTES_PER_SAMPLE = 2;     // 16-bit
 static constexpr size_t FRAME_SIZE_BYTES =
-    SAMPLES_PER_FRAME * BYTES_PER_SAMPLE;          // 320 bytes per frame
+    SAMPLES_PER_FRAME * BYTES_PER_SAMPLE;  // 320 bytes per frame
 static constexpr size_t WAV_HEADER_SIZE = 44;
 static constexpr int MS = 20;
-static constexpr size_t PAYLOAD_TYPE = 8;          // PCMA (G.711 A-law)
+static constexpr size_t PAYLOAD_TYPE = 8;  // PCMA (G.711 A-law)
 static constexpr size_t BUFFER_SIZE = 1024UZ * 128UZ;
 static constexpr size_t RTP_HEADER_SIZE = 12;
 
@@ -39,11 +39,19 @@ struct S3Config {
   std::string bucket;
 };
 
+struct JnausConfig {
+  std::string address;
+  uint16_t port_start;
+  uint16_t port_end;
+};
+
 struct AppConfig {
   ServerConfig server;
   S3Config s3;
+  JnausConfig janus;
 };
 
+enum class SessionType { Standard, WebRTC };
 /**
  * @brief Loads configuration from a TOML file.
  * @param path Path to the .toml file (default: "config.toml")

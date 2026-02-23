@@ -5,9 +5,11 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/json.hpp>
+#include <expected>
 #include <string>
 
 #include "Types.hpp"
+#include "boost/beast/http/verb.hpp"
 
 using namespace hermes::service;
 using namespace hermes::infra;
@@ -62,6 +64,11 @@ void Router::route_query(const req_t& req, res_t& res,
         match_route("/transmit/", beast::http::verb::post,
                     [&] { return handle_transmit(req, res); })
             .or_else([&] {
+              return match_route("/preview/", beast::http::verb::post, [&] {
+                return handle_webrtc_request(req, res);
+              });
+            })
+            .or_else([&] {
               return match_route("/connect/", beast::http::verb::get, [&] {
                 return handle_websocket_request(req, res, stream);
               });
@@ -69,6 +76,14 @@ void Router::route_query(const req_t& req, res_t& res,
             .or_else([&] {
               return match_route("/stop/", beast::http::verb::post,
                                  [&] { return handle_stop(req, res); });
+            })
+            .or_else([&] {
+              return match_route("/pause/", beast::http::verb::post,
+                                 [&] { return handle_pause(req, res); });
+            })
+            .or_else([&] {
+              return match_route("/resume/", beast::http::verb::post,
+                                 [&] { return handle_resume(req, res); });
             });
 
     auto result = result_opt.value_or(std::unexpected(
@@ -90,13 +105,15 @@ void Router::route_query(const req_t& req, res_t& res,
   }
 }
 
-std::expected<void, RouteError> Router::handle_transmit(const req_t& req,
-                                                        res_t& res) {
-  spdlog::debug("Handling /transmit request");
+std::expected<void, RouteError> Router::process_session_request(
+    const req_t& req, res_t& res, SessionType session_type,
+    std::string_view endpoint_name) {
+  spdlog::debug("Handling {} request", endpoint_name);
 
   boost::system::error_code jec;
   json::value jv = json::parse(req.body(), jec);
 
+  // Note: checking jec first is correct, as jv might be invalid if jec is set.
   if (jec) {
     return std::unexpected(
         RouteError{beast::http::status::bad_request, "Invalid JSON format"});
@@ -106,7 +123,7 @@ std::expected<void, RouteError> Router::handle_transmit(const req_t& req,
                                       "JSON root must be an object"});
   }
 
-  auto result = active_.create_session(jv.as_object());
+  auto result = active_.create_session(jv.as_object(), session_type);
 
   if (!result) {
     return std::unexpected(
@@ -115,6 +132,11 @@ std::expected<void, RouteError> Router::handle_transmit(const req_t& req,
 
   ResponseBuilder::build_success_response(res, *result, req.version());
   return {};
+}
+
+std::expected<void, RouteError> Router::handle_transmit(const req_t& req,
+                                                        res_t& res) {
+  return process_session_request(req, res, SessionType::Standard, "/transmit");
 }
 
 std::expected<void, RouteError> Router::handle_stop(const req_t& req,
@@ -143,6 +165,67 @@ std::expected<void, RouteError> Router::handle_stop(const req_t& req,
           RouteError{beast::http::status::not_found, "Session ID not found"});
   }
   return {};
+}
+
+std::expected<void, RouteError> Router::handle_pause(const req_t& req,
+                                                     res_t& res) {
+  boost::urls::url_view url{req.target()};
+  auto params = url.params();
+  auto it = params.find("id");
+  if (it == params.end()) {
+    return std::unexpected(RouteError{beast::http::status::bad_request,
+                                      "Missing query parameter: id"});
+  }
+
+  std::string id((*it)->value);
+  auto status = active_.pause_session(id);
+
+  using enum ActiveSessions::RemoveStatus;
+
+  switch (status) {
+    case Success:
+    case WebSocketNotFound:
+      ResponseBuilder::build_success_response(res, id, req.version());
+      return {};
+
+    case SessionNotFound:
+      return std::unexpected(
+          RouteError{beast::http::status::not_found, "Session ID not found"});
+  }
+  return {};
+}
+
+std::expected<void, RouteError> Router::handle_resume(const req_t& req,
+                                                      res_t& res) {
+  boost::urls::url_view url{req.target()};
+  auto params = url.params();
+  auto it = params.find("id");
+  if (it == params.end()) {
+    return std::unexpected(RouteError{beast::http::status::bad_request,
+                                      "Missing query parameter: id"});
+  }
+
+  std::string id((*it)->value);
+  auto status = active_.resume_session(id);
+
+  using enum ActiveSessions::RemoveStatus;
+
+  switch (status) {
+    case Success:
+    case WebSocketNotFound:
+      ResponseBuilder::build_success_response(res, id, req.version());
+      return {};
+
+    case SessionNotFound:
+      return std::unexpected(
+          RouteError{beast::http::status::not_found, "Session ID not found"});
+  }
+  return {};
+}
+
+std::expected<void, RouteError> Router::handle_webrtc_request(const req_t& req,
+                                                              res_t& res) {
+  return process_session_request(req, res, SessionType::WebRTC, "/webrtc");
 }
 
 std::expected<void, RouteError> Router::handle_websocket_request(

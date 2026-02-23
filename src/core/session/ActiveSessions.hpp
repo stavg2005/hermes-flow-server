@@ -10,6 +10,7 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -17,6 +18,7 @@
 #include "IoContextPool.hpp"
 #include "Session.hpp"
 #include "WebSocketSession.hpp"
+
 using namespace hermes::infra;
 namespace hermes::service {
 /**
@@ -26,7 +28,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
  public:
   using req_t = http::request<http::string_body>;
 
-  explicit ActiveSessions(IoContextPool& pool);
+  explicit ActiveSessions(IoContextPool& pool, const config::AppConfig& cfg);
 
   /**
    * @brief Factory method to spawn a new Audio Session.
@@ -43,7 +45,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
    * @return The unique session ID (string) to be returned to the client.
    */
   std::expected<std::string, ErrorInfo> create_session(
-      const boost::json::object& jobj);
+      const boost::json::object& jobj, SessionType session_type);
 
   /**
    * @brief Upgrades connection to WebSocket and attaches observer to the audio
@@ -56,6 +58,10 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
 
   enum class RemoveStatus { Success, SessionNotFound, WebSocketNotFound };
   RemoveStatus remove_session(const std::string& id);
+
+  RemoveStatus pause_session(const std::string& id);
+
+  ActiveSessions::RemoveStatus resume_session(const std::string& id);
 
   std::shared_ptr<Session> get(const std::string& id) const;
   std::vector<std::string> list_ids() const;
@@ -73,7 +79,8 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
   IoContextPool& pool_;
   std::atomic<int64_t> next_session_id_{0};
   boost::uuids::random_generator generator_;
-
+  config::AppConfig cfg_;
+  std::queue<uint16_t> available_webrtc_ports_;
   std::unordered_map<std::string, std::shared_ptr<Session>> sessions_;
   std::unordered_map<std::string,
                      std::shared_ptr<net::websocket::WebSocketSession>>

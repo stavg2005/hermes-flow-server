@@ -9,21 +9,20 @@ using namespace hermes::service;
 using namespace hermes::net::http;
 namespace hermes::net {
 std::expected<std::unique_ptr<Server>, ErrorInfo> Server::create(
-    boost::asio::io_context& main_ioc, const std::string& address,
-    const std::string& port, unsigned int threads) {
-  auto pool_result = IoContextPool::create(threads);
+    boost::asio::io_context& main_ioc, const hermes::config::AppConfig& cfg) {
+  auto pool_result = IoContextPool::create(cfg.server.threads);
   if (!pool_result) {
     return std::unexpected(pool_result.error());
   }
   auto pool = std::move(*pool_result);
 
-  auto active_sessions = std::make_shared<ActiveSessions>(*pool);
+  auto active_sessions = std::make_shared<ActiveSessions>(*pool, cfg);
   auto router = std::make_shared<Router>(*active_sessions, pool);
 
   boost::asio::ip::tcp::endpoint endpoint;
   try {
-    auto const addr = boost::asio::ip::make_address(address);
-    auto const p = static_cast<unsigned short>(std::stoi(port));
+    auto const addr = boost::asio::ip::make_address(cfg.server.address);
+    auto const p = static_cast<unsigned short>(cfg.server.port);
     endpoint = boost::asio::ip::tcp::endpoint{addr, p};
   } catch (const std::exception& e) {
     return std::unexpected(
@@ -41,7 +40,8 @@ std::expected<std::unique_ptr<Server>, ErrorInfo> Server::create(
       new Server(main_ioc, std::move(pool), std::move(active_sessions),
                  std::move(router), std::move(listener)));
 
-  spdlog::info("Server initialized on {}:{}", address, port);
+  spdlog::info("Server initialized on {}:{}", cfg.server.address,
+               cfg.server.port);
   return server;
 }
 

@@ -11,14 +11,19 @@ namespace hermes::audio {
 AsyncAudioSource::AsyncAudioSource(boost::asio::io_context& io) : io_(io) {}
 
 boost::asio::awaitable<void> AsyncAudioSource::initialize_buffers() {
-  size_t bytes = co_await fetch_bytes(bf_.get_write_span());
-  spdlog::debug("got {} bytes", bytes);
+  auto span1 = bf_.get_write_span();
+  size_t bytes1 = co_await fetch_bytes(span1);
+  if (bytes1 < span1.size()) {
+    std::fill(span1.begin() + bytes1, span1.end(), 0);
+  }
   bf_.back_buffer_ready_ = true;
-
   bf_.swap();
 
-  bytes = co_await fetch_bytes(bf_.get_write_span());
-  spdlog::debug("got {} bytes", bytes);
+  auto span2 = bf_.get_write_span();
+  size_t bytes2 = co_await fetch_bytes(span2);
+  if (bytes2 < span2.size()) {
+    std::fill(span2.begin() + bytes2, span2.end(), 0);
+  }
   bf_.back_buffer_ready_ = true;
 
   co_return;
@@ -48,24 +53,31 @@ std::expected<void, config::NodeError> AsyncAudioSource::process_frame(
     in_buffer_processed_frames_ = 0;
     current_span = bf_.get_read_span();
     buffer_offset = 0;
-
-  
+    // to avoid use after free if the seessions disconnects while we refill
+    auto self = std::static_pointer_cast<AsyncAudioSource>(shared_from_this());
     boost::asio::co_spawn(
         io_,
-        [this]() -> boost::asio::awaitable<void> {
+        [self]() -> boost::asio::awaitable<void> {
           try {
-            // Fetch bytes into the write (back) buffer
-            co_await this->fetch_bytes(this->bf_.get_write_span());
+            auto write_span = self->bf_.get_write_span();
+
+            size_t bytes_read = co_await self->fetch_bytes(write_span);
+
+            if (bytes_read < write_span.size()) {
+              std::fill(write_span.begin() + bytes_read, write_span.end(), 0);
+            }
             // Mark ready so the audio thread can swap to it later
-            this->bf_.back_buffer_ready_ = true;
+            self->bf_.back_buffer_ready_ = true;
           } catch (const std::exception& e) {
-            spdlog::error("Async refill failed for node {}: {}", this->id_,
+            spdlog::error("Async refill failed for node {}: {}", self->id_,
                           e.what());
           }
         },
         boost::asio::detached);
   }
 
+  // when file is in mixer with longer files the mixer would request frames even
+  // tough the file input has finished so we will just return zeros (silence)
   if (total_frames_ > 0 && processed_frames_ >= total_frames_) {
     std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
 

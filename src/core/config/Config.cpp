@@ -65,6 +65,12 @@ std::expected<AppConfig, ErrorInfo> load_config(const std::string& path) {
     config.s3.secret_key = *secret_key;
   }
 
+  if (auto janus = tbl["janus"]) {
+    config.janus.address = janus["address"].value_or("127.0.0.1");
+    config.janus.port_start = janus["port_start"].value_or<uint16_t>(10000);
+    config.janus.port_end = janus["port_end"].value_or<uint16_t>(10200);
+  }
+
   spdlog::info("Loaded configuration from {}", path);
   return config;
 }

@@ -6,17 +6,13 @@
 #include <string>
 #include <vector>
 
-#include "BufferPool.hpp"
-#include "spdlog/spdlog.h"
-
 #include "CodecStrategy.hpp"
 #include "Config.hpp"
-
-
 #include "Packet.hpp"
 #include "PacketUtils.hpp"
 #include "RTPPacketizer.hpp"
 #include "Types.hpp"
+#include "spdlog/spdlog.h"
 
 namespace hermes::net::rtp {
 namespace asio = boost::asio;
@@ -30,6 +26,12 @@ class RTPStreamer {
     packetizer_ = std::make_unique<RTPPacketizer>(
         codec_->get_payload_type(), generate_ssrc(),
         codec_->get_timestamp_increment(config::FRAME_SIZE_BYTES));
+
+    for (int i = 0; i < RING_BUFFER_SIZE; ++i) {
+
+      packet_ring_[i] = std::make_shared<std::vector<uint8_t>>(
+          RTP_HEADER_SIZE + config::FRAME_SIZE_BYTES);
+    }
   }
 
   void add_client(const std::string& ip, uint16_t port) {
@@ -64,14 +66,14 @@ class RTPStreamer {
   void send_frame(std::span<const uint8_t> pcm_frame) {
     if (clients_.empty()) return;
 
-    size_t max_packet_size = RTP_HEADER_SIZE + pcm_frame.size();
-    auto packet_owner =
-        infra::BufferPool::instance().acquire(max_packet_size);
+    auto packet_owner = packet_ring_[ring_index_];
+
+    ring_index_ = (ring_index_ + 1) % RING_BUFFER_SIZE;
+
     std::span<uint8_t> packet_span(*packet_owner);
 
     size_t packet_size =
         packet_to_rtp(pcm_frame, *packetizer_, *codec_, packet_span);
-
 
     if (packet_size == 0) return;
 
@@ -79,13 +81,18 @@ class RTPStreamer {
       socket_.async_send_to(
           asio::buffer(*packet_owner, packet_size), endpoint,
           [packet_owner](const boost::system::error_code& ec, std::size_t) {
-            if (ec) { /* Handle error (e.g., remove client) */
+            if (ec) {
+              spdlog::debug("UDP send failed: {}", ec.message());
             }
           });
     }
   }
 
  private:
+  static constexpr int RING_BUFFER_SIZE = 16;
+  std::array<std::shared_ptr<std::vector<uint8_t>>, RING_BUFFER_SIZE>
+      packet_ring_;
+  size_t ring_index_ = 0;
   std::unique_ptr<RTPPacketizer> packetizer_;
   std::unique_ptr<audio::ICodecStrategy> codec_;
 

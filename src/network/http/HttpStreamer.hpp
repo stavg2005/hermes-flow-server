@@ -14,7 +14,6 @@
 #include <string>
 #include <utility>
 
-#include "BufferPool.hpp"
 #include "Concepts.hpp"
 #include "Types.hpp"
 
@@ -126,7 +125,7 @@ class HttpStreamer {
         buffer.consume(buffer.size());
       }
 
-      auto shared_buf = infra::BufferPool::instance().acquire(512 * 1024);
+      auto shared_buf = std::make_shared<std::vector<uint8_t>>(512 * 1024);
 
       while (true) {
         if (expected_size > 0 && total_written >= expected_size) {
@@ -140,7 +139,7 @@ class HttpStreamer {
 
         if (bytes_read == 0) break;
 
-        // 3. Write to File (Sink) - NOW PROTECTED
+        // 3. Write to File (Sink)
         size_t written = co_await asio::async_write(
             sink, asio::buffer(*shared_buf, bytes_read), asio::use_awaitable);
 

@@ -14,18 +14,10 @@ std::expected<S3Session*, ErrorInfo> S3Session::create(
     boost::asio::io_context& ioc, const S3Config& manual_cfg) {
   S3Config final_config = manual_cfg;
 
-  if (final_config.access_key.empty()) {
-    spdlog::debug("[S3Session] No config provided, loading from config.toml");
-
-    auto config_result = load_config("../config.toml");
-
-    if (!config_result) {
-      spdlog::error("S3Session failed to load config: {}",
-                    config_result.error().message);
-      return std::unexpected(config_result.error());
-    }
-
-    final_config = std::move(config_result.value().s3);
+  if (manual_cfg.access_key.empty()) {
+    spdlog::error("S3Session created without valid credentials.");
+    return std::unexpected(
+        ErrorInfo::From(AppError::ConfigError, "Missing S3 Configuration"));
   }
   return new S3Session(ioc, std::move(final_config));
 }

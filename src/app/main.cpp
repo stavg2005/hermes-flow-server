@@ -1,17 +1,14 @@
 
+#include <spdlog/async.h>
+#include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+
+#include <boost/asio.hpp>
+#include <boost/beast/http.hpp>
 #include <csignal>
 #include <exception>
 #include <memory>
 #include <vector>
-
-
-#include <spdlog/sinks/rotating_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/spdlog.h>
-
-#include <boost/asio.hpp>
-#include <boost/beast/http.hpp>
-
 
 #include "Config.hpp"
 #include "NodeRegistry.hpp"
@@ -48,7 +45,6 @@ static void SetupLogging() {
   spdlog::flush_on(spdlog::level::debug);
 }
 
-
 int main(int argc, char* argv[]) {
   // Safety net for unexpected runtime crashes (e.g. std::bad_alloc)
   try {
@@ -64,12 +60,10 @@ int main(int argc, char* argv[]) {
 
     auto cfg = std::move(*cfg_result);
 
-     hermes::audio::register_builtin_nodes();
+    hermes::audio::register_builtin_nodes();
 
     asio::io_context main_ioc;
-    auto server_result =
-        Server::create(main_ioc, cfg.server.address,
-                       std::to_string(cfg.server.port), cfg.server.threads);
+    auto server_result = Server::create(main_ioc, cfg);
 
     if (!server_result) {
       spdlog::critical("Server Init Failed: {}", server_result.error().message);

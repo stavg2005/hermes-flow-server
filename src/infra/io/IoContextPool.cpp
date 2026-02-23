@@ -4,6 +4,12 @@
 
 #include "Types.hpp"
 #include "spdlog/spdlog.h"
+#include <thread>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
 
 using namespace hermes::config;
 namespace hermes::infra {

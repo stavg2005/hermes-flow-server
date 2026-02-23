@@ -29,7 +29,7 @@ struct FileInputNode : public AsyncAudioSource {
                          std::string path);
 
   boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
-  ensure_file_exists();
+  ensure_file_exists(const config::S3Config& s3_config);
 
   virtual std::expected<void, config::NodeError> connect_input(
       Node* source) override;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/experimental/channel.hpp>
 #include <boost/asio/io_context.hpp>
 #include <memory>
 #include <string>
@@ -25,6 +26,9 @@ namespace hermes::service {
  * 3. Streaming the resulting audio via RTP.
  * 4. Reporting statistics and errors to an attached observer (e.g., WebSocket).
  */
+
+using signal_channel =
+    asio::experimental::channel<void(boost::system::error_code)>;
 class Session : public std::enable_shared_from_this<Session> {
  public:
   /**
@@ -34,7 +38,10 @@ class Session : public std::enable_shared_from_this<Session> {
    * @param id A unique identifier for this session.
    * @param g The audio graph to execute (moved into the session).
    */
-  Session(boost::asio::io_context& io, std::string id, Graph&& g);
+  Session(boost::asio::io_context& io, std::string id, Graph&& g,
+          config::S3Config& s3_config, bool is_web_rtc = false,
+          std::string janus_ip = "",
+          std::optional<uint16_t> janus_port = std::nullopt);
 
   /**
    * @brief Destructor.
@@ -58,6 +65,11 @@ class Session : public std::enable_shared_from_this<Session> {
    */
   void stop();
 
+  void pause();
+
+  void resume();
+
+  std::optional<uint16_t> get_webrtc_port() const { return janus_port_; }
   /**
    * @brief Adds a target client for RTP streaming.
    *
@@ -124,11 +136,14 @@ class Session : public std::enable_shared_from_this<Session> {
   asio::io_context& io_;
   std::string id_;
   std::atomic<bool> is_running_{false};
-
+  std::atomic<bool> is_paused_{false};
+  bool is_webrtc_{false};
+  std::string janus_ip_;
+  std::optional<uint16_t> janus_port_;
   std::unique_ptr<Graph> graph_;
   std::unique_ptr<AudioExecutor> audio_executor_;
   std::unique_ptr<RTPStreamer> streamer_;
-
+  signal_channel resume_channel_;
   asio::steady_timer timer_;
   std::unique_ptr<ISessionObserver> observer_;
 };

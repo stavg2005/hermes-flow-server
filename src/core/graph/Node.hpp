@@ -89,7 +89,7 @@ struct Node : public std::enable_shared_from_this<Node> {
 };
 
 struct Graph {
-  std::vector<std::unique_ptr<Node>> nodes;
+  std::vector<std::shared_ptr<Node>> nodes;
   std::unordered_map<std::string, Node*> node_map;
   Node* start_node;
 };

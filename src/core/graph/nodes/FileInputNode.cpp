@@ -6,6 +6,7 @@
 #include <chrono>
 #include <expected>
 
+#include "BasicNodes.hpp"
 #include "FileSink.hpp"
 #include "S3Session.hpp"
 #include "Types.hpp"
@@ -34,7 +35,6 @@ std::expected<void, NodeError> FileInputNode::open() {
     file_handle_.open(file_path_, boost::asio::file_base::read_only, ec);
 
     if (!ec && file_handle_.is_open()) {
-      // Set total_frames_ in the base Node class
       total_frames_ = static_cast<int>(file_handle_.size() / FRAME_SIZE_BYTES);
       spdlog::info("[{}] Opened file. Total frames: {}", file_name_,
                    total_frames_);
@@ -65,6 +65,7 @@ std::expected<void, NodeError> FileInputNode::close() {
   is_first_read_ = true;
   processed_frames_ = 0;
   in_buffer_processed_frames_ = 0;
+  bf_.reset();
   return {};
 }
 
@@ -101,7 +102,6 @@ boost::asio::awaitable<size_t> FileInputNode::fetch_bytes(
     }
   }
 
-  // Exhausted retries
   spdlog::error("[{}] Failed to read from file after retries.", file_name_);
   co_return 0;
 }
@@ -133,20 +133,21 @@ void FileInputNode::apply_effects(std::span<uint8_t> frame_buffer) {
 }
 
 boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
-FileInputNode::ensure_file_exists() {
+FileInputNode::ensure_file_exists(const config::S3Config& s3_config) {
   if (std::filesystem::exists(file_path_)) {
     co_return std::expected<void, config::ErrorInfo>{};
   }
 
   spdlog::info("File missing: {}. Requesting from S3...", file_name_);
 
-  auto session_result = hermes::net::s3::S3Session::create(io_);
+  auto session_result = hermes::net::s3::S3Session::create(io_, s3_config);
   if (!session_result) {
     co_return std::unexpected(config::ErrorInfo::From(
         config::AppError::NetworkError,
         "Failed to create S3Session: " + session_result.error().message));
   }
-  std::unique_ptr<hermes::net::s3::S3Session> s3_session(session_result.value());
+  std::unique_ptr<hermes::net::s3::S3Session> s3_session(
+      session_result.value());
 
   infra::FileSink sink(io_);
 

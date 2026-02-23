@@ -15,7 +15,7 @@ namespace hermes::net::rtp {
 [[nodiscard]] uint32_t generate_ssrc() {
   static std::random_device dev;
   static thread_local std::mt19937_64 rng(dev());
-  static std::uniform_int_distribution<uint32_t> dist(1, 100);
+  static std::uniform_int_distribution<uint32_t> dist(1, 0xFFFFFFFF);
   const auto ssrc = dist(rng);
 
   return ssrc;

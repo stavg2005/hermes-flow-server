@@ -1,4 +1,4 @@
-
+#pragma once
 
 #include <array>
 #include <filesystem>
@@ -10,10 +10,12 @@ namespace hermes::infra {
 /**
  * @brief Async double-buffer for audio streaming.
  *
- * Designed for a Single-Producer (S3 Loader), Single-Consumer (Audio Thread) model.
+ * Designed for a Single-Producer (S3 Loader), Single-Consumer (Audio Thread)
+ * model.
  * - The "Back" buffer is filled asynchronously.
  * - The "Front" (Read) buffer is consumed by the audio engine.
- * - 'back_buffer_ready_' signals when the back buffer is full and ready to swap.
+ * - 'back_buffer_ready_' signals when the back buffer is full and ready to
+ * swap.
  */
 struct DoubleBuffer {
   std::filesystem::path path_;
@@ -47,8 +49,10 @@ struct DoubleBuffer {
    */
   void swap();
 
+  void reset();
+
  private:
   std::array<std::vector<uint8_t>, 2> blocks_;
   int read_index_ = 0;
 };
-}  // namespace hermes::audio
+}  // namespace hermes::infra

@@ -7,6 +7,7 @@
 #include <memory>
 #include <stdexcept>
 
+#include "Config.hpp"
 #include "Json2Graph.hpp"
 #include "Nodes.hpp"
 #include "WebSocketSessionObserver.hpp"
@@ -14,10 +15,17 @@
 using namespace hermes::audio;
 using namespace hermes::infra;
 namespace hermes::service {
-ActiveSessions::ActiveSessions(IoContextPool& pool) : pool_(pool) {}
+ActiveSessions::ActiveSessions(IoContextPool& pool,
+                               const config::AppConfig& cfg)
+    : pool_(pool), cfg_(std::move(cfg)) {
+  // filling the ports that janus can use for rtp streams
+  for (uint16_t p = cfg_.janus.port_start; p <= cfg_.janus.port_end; ++p) {
+    available_webrtc_ports_.push(p);
+  }
+}
 
 std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
-    const boost::json::object& jobj) {
+    const boost::json::object& jobj, SessionType session_type) {
   boost::uuids::uuid uuid = generator_();
   std::string session_id = boost::uuids::to_string(uuid);
   spdlog::debug("Creating session with ID: {}", session_id);
@@ -31,12 +39,33 @@ std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
         return err;
       });
 
+  // Bubble up the error if graph parsing failed
+  if (!graph_result) {
+    return std::unexpected(graph_result.error());
+  }
+
   Graph g = std::move(*graph_result);
 
   spdlog::debug("Graph parsed for session {}. Node count: {}", session_id,
                 g.nodes.size());
-  spdlog::debug("start node in active session {}", g.start_node->id());
-  auto session = std::make_shared<Session>(io, session_id, std::move(g));
+  spdlog::debug("Start node in active session {}", g.start_node->id());
+
+  bool is_webrtc = (session_type == SessionType::WebRTC);
+  std::optional<uint16_t> allocated_port = std::nullopt;
+
+  if (session_type == SessionType::WebRTC) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (available_webrtc_ports_.empty()) {
+      return std::unexpected(ErrorInfo::From(
+          AppError::LogicError, "No available WebRTC ports for Janus"));
+    }
+
+    allocated_port = available_webrtc_ports_.front();
+    available_webrtc_ports_.pop();
+  }
+  auto session =
+      std::make_shared<Session>(io, session_id, std::move(g), cfg_.s3,
+                                is_webrtc, cfg_.janus.address, allocated_port);
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -122,5 +151,33 @@ ActiveSessions::RemoveStatus ActiveSessions::remove_session(
   // This is technically a success, but we report the detail.
   spdlog::warn("[{}] Audio removed, but WebSocket was missing.", id);
   return RemoveStatus::WebSocketNotFound;
+}
+
+ActiveSessions::RemoveStatus ActiveSessions::pause_session(
+    const std::string& id) {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  auto session_it = sessions_.find(id);
+  if (session_it == sessions_.end()) {
+    return RemoveStatus::SessionNotFound;
+  }
+
+  session_it->second->pause();
+
+  return RemoveStatus::Success;
+}
+
+ActiveSessions::RemoveStatus ActiveSessions::resume_session(
+    const std::string& id) {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  auto session_it = sessions_.find(id);
+  if (session_it == sessions_.end()) {
+    return RemoveStatus::SessionNotFound;
+  }
+
+  session_it->second->resume();
+
+  return RemoveStatus::Success;
 }
 }  // namespace hermes::service

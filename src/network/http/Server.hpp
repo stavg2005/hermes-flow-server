@@ -16,8 +16,7 @@ namespace hermes::net {
 class Server : public std::enable_shared_from_this<Server> {
  public:
   static std::expected<std::unique_ptr<Server>, ErrorInfo> create(
-      boost::asio::io_context& main_ioc, const std::string& address,
-      const std::string& port, unsigned int threads);
+      boost::asio::io_context& main_ioc, const hermes::config::AppConfig& cfg);
 
   ~Server();
 

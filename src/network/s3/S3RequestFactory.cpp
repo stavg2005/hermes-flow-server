@@ -41,4 +41,4 @@ http::request<http::empty_body> S3RequestFactory::create_signed_get_request(
 
   return req;
 }
-}  // namespace hermes::net::s3::S3RequestFactory
+}  // namespace hermes::net::s3

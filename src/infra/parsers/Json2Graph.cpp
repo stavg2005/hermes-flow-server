@@ -42,7 +42,6 @@ std::expected<void, config::ErrorInfo> ParseNodes(boost::asio::io_context& io,
 
     const auto& obj = v.as_object();
 
-    // 1. Extraction
     auto id = require_json<std::string>(obj, "id");
     auto type = require_json<std::string>(obj, "type");
     auto data = require_json<json::object>(obj, "data");
@@ -52,7 +51,6 @@ std::expected<void, config::ErrorInfo> ParseNodes(boost::asio::io_context& io,
                                 : id.error());
     }
 
-    // 2. Creation
     auto node_res = audio::NodeFactory::instance().create(*type, io, *data);
     if (!node_res) {
       return std::unexpected(node_res.error());
@@ -60,7 +58,6 @@ std::expected<void, config::ErrorInfo> ParseNodes(boost::asio::io_context& io,
 
     auto node = std::move(*node_res);
 
-    // 3. Storage
     node->set_id(*id);
     graph.node_map[*id] = node.get();
     graph.nodes.push_back(std::move(node));
@@ -92,12 +89,11 @@ std::expected<void, config::ErrorInfo> SetStartNode(
 
 std::expected<void, config::ErrorInfo> ParseEdges(const json::array& edges_arr,
                                                   audio::Graph& graph) {
-  using namespace config;
+
 
   for (const auto& v : edges_arr) {
     const auto& edge = v.as_object();
 
-    // 1. Lookup
     std::string src_id = std::string(edge.at("source").as_string());
     std::string tgt_id = std::string(edge.at("target").as_string());
 
@@ -106,8 +102,8 @@ std::expected<void, config::ErrorInfo> ParseEdges(const json::array& edges_arr,
           AppError::ParseError, "Edge references missing node ID"));
     }
 
-    auto src_node = graph.node_map[src_id];
-    auto tgt_node = graph.node_map[tgt_id];
+    auto* src_node = graph.node_map[src_id];
+    auto* tgt_node = graph.node_map[tgt_id];
 
     if (src_node->kind() == audio::NodeKind::Clients) {
       return std::unexpected(ErrorInfo::From(
