@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <expected>
 #include <string>
 #include <unordered_map>
 
@@ -14,6 +15,7 @@ namespace hermes::audio {
 // =========================================================
 struct FileOptionsNode : Node {
   double gain{1.0};
+  double pitch_shift{1.0};
 
   // Logic defined inside class body is implicitly 'inline'
   explicit FileOptionsNode(Node* t = nullptr) : Node(t) {
@@ -37,8 +39,11 @@ struct ClientsNode : Node {
 
   // Override to enforce rule: Clients cannot have inputs
   std::expected<void, config::NodeError> connect_input(Node* source) override {
-    return error(config::NodeErrorCode::FormatError,
+    return {};
+    /*
+        return error(config::NodeErrorCode::FormatError,
                  "ClientsNode cannot accept incoming connections.");
+    */
   }
 };
 

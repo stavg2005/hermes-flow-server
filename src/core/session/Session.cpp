@@ -20,7 +20,7 @@ using namespace hermes::config;
 namespace hermes::service {
 
 Session::Session(asio::io_context& io, std::string id, Graph&& g,
-                 config::S3Config& s3_config, bool is_web_rtc,
+                 config::S3Config s3_config, bool is_web_rtc,
                  std::string janus_ip, std::optional<uint16_t> janus_port)
     : io_(io),
       id_(std::move(id)),
@@ -28,10 +28,10 @@ Session::Session(asio::io_context& io, std::string id, Graph&& g,
       timer_(io),
       graph_(std::make_unique<Graph>(std::move(g))),
       janus_ip_(std::move(janus_ip)),
-      janus_port_(janus_port) {
+      janus_port_(janus_port),
+      is_webrtc_(is_web_rtc) {
   audio_executor_ = std::make_unique<AudioExecutor>(io_, *graph_, s3_config);
   streamer_ = std::make_unique<RTPStreamer>(io_);
-  is_webrtc_ = true;
   spdlog::debug("Session [{}] created.", id_);
 }
 
@@ -66,6 +66,9 @@ void Session::resume() {
     resume_channel_.try_send(boost::system::error_code{});
   }
 }
+
+void ConfigureClientsRoutes() {}
+
 // TODO save the clients node in a data memeber in graph when parsing the graph
 void Session::configure_streamer_from_graph() {
   if (is_webrtc_) {
@@ -137,21 +140,14 @@ asio::awaitable<void> Session::start() {
           spdlog::debug("[{}] Timer cancelled, stopping loop.", id_);
           break;
         }
-        // Ignore other timer_ec errors (like timeouts if it's already in the
-        // past)
 
         auto [executor_wants_continue, status] =
             audio_executor_->get_next_frame(pcm_buffer);
 
-        if (!is_status_ok(status.code)) {
-          exit_reason.code = status.code;
-          break;
-        }
-
         if (!executor_wants_continue) {
           spdlog::info("[{}] Executor reached natural finish.", id_);
           break;
-        } 
+        }
 
         streamer_->send_frame(pcm_buffer);
         audio_executor_->get_stats().packets_sent++;

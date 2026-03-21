@@ -39,7 +39,7 @@ class Session : public std::enable_shared_from_this<Session> {
    * @param g The audio graph to execute (moved into the session).
    */
   Session(boost::asio::io_context& io, std::string id, Graph&& g,
-          config::S3Config& s3_config, bool is_web_rtc = false,
+          config::S3Config s3_config, bool is_web_rtc = false,
           std::string janus_ip = "",
           std::optional<uint16_t> janus_port = std::nullopt);
 
@@ -68,6 +68,8 @@ class Session : public std::enable_shared_from_this<Session> {
   void pause();
 
   void resume();
+
+  void ConfigureClientsRoutes();
 
   std::optional<uint16_t> get_webrtc_port() const { return janus_port_; }
   /**

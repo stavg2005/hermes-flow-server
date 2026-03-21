@@ -53,6 +53,7 @@ std::expected<void, NodeError> FileInputNode::open() {
 }
 
 std::expected<void, NodeError> FileInputNode::close() {
+
   boost::system::error_code ec;
   file_handle_.close(ec);
 
@@ -66,6 +67,25 @@ std::expected<void, NodeError> FileInputNode::close() {
   processed_frames_ = 0;
   in_buffer_processed_frames_ = 0;
   bf_.reset();
+  pitch_shifter_.reset();
+
+  if (this->is_in_loop()) {
+    spdlog::info("[{}] Node is in a loop. Refilling buffers asynchronously...", file_name_);
+
+    auto self = std::static_pointer_cast<FileInputNode>(shared_from_this());
+    boost::asio::co_spawn(
+        io_,
+        [self]() -> boost::asio::awaitable<void> {
+          try {
+            co_await self->initialize_buffers();
+          } catch (const std::exception& e) {
+            spdlog::error("Async loop refill failed for node {}: {}", self->id(), e.what());
+          }
+        },
+        boost::asio::detached);
+  } else {
+    is_ready_ = true;
+  }
   return {};
 }
 
@@ -117,18 +137,24 @@ size_t FileInputNode::get_read_offset(std::span<uint8_t> buffer) {
 }
 
 void FileInputNode::apply_effects(std::span<uint8_t> frame_buffer) {
-  if (!options_ || options_->gain == 1.0) return;
+  if (!options_) return;
 
-  // Note: ideally check frame_buffer.size() alignment here
-  auto gain = options_->gain;
   auto* samples = reinterpret_cast<int16_t*>(frame_buffer.data());
-  size_t count = frame_buffer.size() / sizeof(int16_t);
+  size_t num_samples = frame_buffer.size() / sizeof(int16_t);
+  std::span<int16_t> audio_span(samples, num_samples);
 
-  for (size_t i = 0; i < count; i++) {
-    int32_t current_sample = samples[i];
-    auto boosted = static_cast<int32_t>(current_sample * gain);
-    samples[i] =
-        static_cast<int16_t>(std::clamp(boosted, min_16_bytes, max_16_bytes));
+  // 1. Apply Gain
+  if (options_->gain != 1.0) {
+    float gain = options_->gain;
+    for (auto& sample : audio_span) {
+      int32_t boosted = static_cast<int32_t>(sample * gain);
+      sample = static_cast<int16_t>(std::clamp(boosted, -32768, 32767));
+    }
+  }
+
+  // 2. Apply Pitch Shift (Delegated to the dedicated class)
+  if (options_->pitch_shift != 0.0) {
+    pitch_shifter_.process(audio_span, options_->pitch_shift);
   }
 }
 

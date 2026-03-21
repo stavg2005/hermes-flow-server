@@ -8,6 +8,13 @@
 namespace hermes::config {
 
 // Assumptions: 8kHz Sampling Rate, 16-bit Mono PCM
+static constexpr int SAMPLE_RATE = 8000;
+static constexpr int CHANNELS = 1;
+static constexpr int WINDOW_MS = 50;
+
+// חישוב גודל ה-Buffer הנדרש בדגימות
+static constexpr int MAX_DELAY_SAMPLES = (SAMPLE_RATE * WINDOW_MS) / 1000;
+static constexpr int DELAY_BUFFER_SIZE = MAX_DELAY_SAMPLES * 2;
 static constexpr size_t FRAME_DURATION = 20;      // Duration in ms
 static constexpr size_t SAMPLES_PER_FRAME = 160;  // 8000 Hz * 0.020 s
 static constexpr size_t BYTES_PER_SAMPLE = 2;     // 16-bit

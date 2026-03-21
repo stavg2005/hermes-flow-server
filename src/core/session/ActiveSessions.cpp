@@ -17,7 +17,7 @@ using namespace hermes::infra;
 namespace hermes::service {
 ActiveSessions::ActiveSessions(IoContextPool& pool,
                                const config::AppConfig& cfg)
-    : pool_(pool), cfg_(std::move(cfg)) {
+    : pool_(pool), cfg_(cfg) {
   // filling the ports that janus can use for rtp streams
   for (uint16_t p = cfg_.janus.port_start; p <= cfg_.janus.port_end; ++p) {
     available_webrtc_ports_.push(p);
@@ -54,6 +54,7 @@ std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
   std::optional<uint16_t> allocated_port = std::nullopt;
 
   if (session_type == SessionType::WebRTC) {
+    spdlog::debug("webrtc session detected");
     std::lock_guard<std::mutex> lock(mutex_);
     if (available_webrtc_ports_.empty()) {
       return std::unexpected(ErrorInfo::From(
@@ -133,6 +134,12 @@ ActiveSessions::RemoveStatus ActiveSessions::remove_session(
   auto session_it = sessions_.find(id);
   if (session_it == sessions_.end()) {
     return RemoveStatus::SessionNotFound;
+  }
+
+  auto port = session_it->second->get_webrtc_port();
+  if (port.has_value()) {
+    available_webrtc_ports_.push(*port);
+    spdlog::debug("[{}] Reclaimed WebRTC port {}", id, *port);
   }
 
   session_it->second->stop();

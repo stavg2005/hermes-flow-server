@@ -11,6 +11,7 @@ namespace hermes::audio {
 AsyncAudioSource::AsyncAudioSource(boost::asio::io_context& io) : io_(io) {}
 
 boost::asio::awaitable<void> AsyncAudioSource::initialize_buffers() {
+  is_ready_ = false;
   auto span1 = bf_.get_write_span();
   size_t bytes1 = co_await fetch_bytes(span1);
   if (bytes1 < span1.size()) {
@@ -25,7 +26,7 @@ boost::asio::awaitable<void> AsyncAudioSource::initialize_buffers() {
     std::fill(span2.begin() + bytes2, span2.end(), 0);
   }
   bf_.back_buffer_ready_ = true;
-
+  is_ready_ = true;
   co_return;
 }
 
@@ -43,6 +44,7 @@ std::expected<void, config::NodeError> AsyncAudioSource::process_frame(
   if (buffer_offset + config::FRAME_SIZE_BYTES > current_span.size()) {
     // If back buffer isn't ready, we have an underrun (CPU/Disk too slow)
     if (!bf_.back_buffer_ready_) {
+      spdlog::info("underrun");
       std::fill(frame_buffer.begin(), frame_buffer.end(), 0);
       return error(config::NodeErrorCode::Underrun, "Underrun in node {}", id_);
     }

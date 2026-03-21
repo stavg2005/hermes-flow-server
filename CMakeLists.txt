@@ -152,6 +152,7 @@ set(SOURCES_INFRA
     src/infra/parsers/Json2Graph.cpp
     src/core/config/Config.cpp
     src/infra/audio/DoubleBuffer.cpp
+    src/infra/audio/PitchShifter.cpp
 )
 
 # Network

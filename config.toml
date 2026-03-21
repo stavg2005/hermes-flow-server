@@ -13,6 +13,6 @@ region = "us-east-1"
 service ="s3"
 
 [janus]
-address = "10.0.0.5"
+address = "10.0.0.24"
 port_start = "10000"
 port_end ="10200"

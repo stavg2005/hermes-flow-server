@@ -78,9 +78,12 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_options(
   auto node = std::make_unique<FileOptionsNode>();
 
   auto gain_res = require<double>(data, "gain");
-  if (!gain_res) return std::unexpected(gain_res.error());
 
+  if (!gain_res) return std::unexpected(gain_res.error());
+  auto pitch_shift_res = require<double>(data, "pitch_shift");
+  if (!pitch_shift_res) return std::unexpected(pitch_shift_res.error());
   node->gain = *gain_res;
+  node->pitch_shift = *pitch_shift_res;
   return node;
 }
 

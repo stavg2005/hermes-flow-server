@@ -1,10 +1,11 @@
 #pragma once
 
+#include <array>
 #include <boost/asio/stream_file.hpp>
 #include <cstddef>
 #include <memory>
 #include <string>
-
+#include "PitchShifter.h"
 #include "AsyncAudioSource.hpp"
 #include "BasicNodes.hpp"
 
@@ -20,6 +21,7 @@ struct FileInputNode : public AsyncAudioSource {
   std::string file_path_;
   boost::asio::stream_file file_handle_;
   FileOptionsNode* options_ = nullptr;
+  PitchShifter pitch_shifter_;
 
   // WAV Header Parsing State
   bool is_first_read_ = true;

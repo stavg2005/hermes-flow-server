@@ -57,7 +57,8 @@ struct Node : public std::enable_shared_from_this<Node> {
   [[nodiscard]] bool is_complete() const {
     return (total_frames_ > 0) && (processed_frames_ >= total_frames_);
   }
-
+[[nodiscard]] bool is_in_loop() const { return is_in_loop_; }
+  void set_in_loop(bool val) { is_in_loop_ = val; }
   /** * @brief Resets counters. Essential for re-using the graph.
    */
   virtual void reset_state() {
@@ -77,6 +78,7 @@ struct Node : public std::enable_shared_from_this<Node> {
   int processed_frames_{0};
   int total_frames_{0};
   int in_buffer_processed_frames_{0};
+  bool is_in_loop_{false};
 
   template <typename... Args>
   std::unexpected<config::NodeError> error(config::NodeErrorCode code,

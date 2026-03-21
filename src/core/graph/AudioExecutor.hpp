@@ -19,7 +19,7 @@ class AudioExecutor {
    * @param graph The audio graph structure containing nodes and edges.
    */
   AudioExecutor(boost::asio::io_context& io, const Graph& graph,
-                config::S3Config& s3_config);
+                config::S3Config s3_config);
 
   /**
    * @return A reference to the stats object used by Observers (e.g.,

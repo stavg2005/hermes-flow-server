@@ -11,14 +11,14 @@
 #include "core/graph/Node.hpp"
 #include "network/s3/S3Session.hpp"
 #include "spdlog/spdlog.h"
-
+#include "unordered_set"
 using namespace hermes::net::s3;
 using namespace hermes::service;
 
 namespace hermes::audio {
 
 AudioExecutor::AudioExecutor(boost::asio::io_context& io, const Graph& graph,
-                             config::S3Config& s3_config)
+                             config::S3Config s3_config)
     : io_(io), graph_(graph), s3_config_(std::move(s3_config)) {
   if (graph_.start_node == nullptr) {
     throw std::runtime_error("Invalid graph: missing start node.");
@@ -49,6 +49,27 @@ AudioExecutor::prepare() {
   }
 
   update_mixers();
+
+  Node* curr = graph_.start_node;
+  std::unordered_set<Node*> visited;
+  Node* cycle_start = nullptr;
+
+  while (curr != nullptr) {
+    if (!visited.insert(curr).second) {
+      cycle_start = curr;  // Found the start of the cycle
+      break;
+    }
+    curr = curr->next();
+  }
+
+  if (cycle_start != nullptr) {
+    spdlog::info("Loop detected in graph! Flagging loop nodes...");
+    Node* loop_node = cycle_start;
+    do {
+      loop_node->set_in_loop(true);
+      loop_node = loop_node->next();
+    } while (loop_node != cycle_start);
+  }
 
   current_node_ = graph_.start_node;
   spdlog::debug("current node!!!: {}", graph_.start_node->id());
