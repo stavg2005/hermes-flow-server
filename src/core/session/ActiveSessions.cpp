@@ -187,4 +187,10 @@ ActiveSessions::RemoveStatus ActiveSessions::resume_session(
 
   return RemoveStatus::Success;
 }
+
+std::size_t ActiveSessions::size() const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return sessions_.size();
+}
+
 }  // namespace hermes::service

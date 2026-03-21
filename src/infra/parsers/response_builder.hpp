@@ -95,6 +95,18 @@ class ResponseBuilder {
     res.prepare_payload();
   }
 
+  static void build_plaintext_response(res_t &res, const std::string &body_text, unsigned int version,
+                                     bool keep_alive = false) {
+    res.version(version);
+    res.keep_alive(keep_alive);
+    res.result(http::status::ok);
+
+    set_standard_headers(res);
+    res.set(http::field::content_type, "text/plain; version=0.0.4");
+    res.body() = body_text;
+    res.prepare_payload();
+  }
+
   static void build_options_response(res_t &res, unsigned int version,
                                      bool keep_alive = true) {
     res.version(version);

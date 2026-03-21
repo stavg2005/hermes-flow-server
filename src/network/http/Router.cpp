@@ -84,6 +84,10 @@ void Router::route_query(const req_t& req, res_t& res,
             .or_else([&] {
               return match_route("/resume/", beast::http::verb::post,
                                  [&] { return handle_resume(req, res); });
+            })
+            .or_else([&] {
+              return match_route("/metrics", beast::http::verb::get,
+                                 [&] { return handle_metrics(req, res); });
             });
 
     auto result = result_opt.value_or(std::unexpected(
@@ -256,4 +260,17 @@ std::expected<void, RouteError> Router::handle_websocket_request(
 
   return {};
 }
+
+std::expected<void, RouteError> Router::handle_metrics(const req_t& req,
+                                                       res_t& res) {
+  std::string body =
+      "# HELP hermes_active_sessions_total Number of currently active audio sessions.\n"
+      "# TYPE hermes_active_sessions_total gauge\n"
+      "hermes_active_sessions_total " +
+      std::to_string(active_.size()) + "\n";
+
+  ResponseBuilder::build_plaintext_response(res, body, req.version(), req.keep_alive());
+  return {};
+}
+
 }  // namespace hermes::net::http

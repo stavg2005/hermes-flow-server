@@ -50,7 +50,10 @@ int main(int argc, char* argv[]) {
   try {
     SetupLogging();
 
-    auto cfg_result = load_config("../config.toml");
+    auto cfg_result = load_config("config.toml");
+    if (!cfg_result) {
+      cfg_result = load_config("../config.toml");
+    }
 
     if (!cfg_result) {
       spdlog::critical("Failed to load configuration: {}",

@@ -47,6 +47,7 @@ class Router {
       std::string_view endpoint_name);
   std::expected<void, RouteError> handle_pause(const req_t& req, res_t& res);
   std::expected<void, RouteError> handle_resume(const req_t& req, res_t& res);
+  std::expected<void, RouteError> handle_metrics(const req_t& req, res_t& res);
   // Server owns both, and Server ensures Router dies before ActiveSessions.
   hermes::service::ActiveSessions& active_;
   std::shared_ptr<IoContextPool> pool_;

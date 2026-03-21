@@ -1,0 +1,65 @@
+# ==========================================
+# STAGE 1: Builder
+# ==========================================
+FROM ubuntu:22.04 AS builder
+
+ENV TZ=Etc/UTC
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates gnupg wget software-properties-common
+
+RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+RUN echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
+
+RUN wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21
+
+RUN apt-get update && apt-get install -y \
+    cmake build-essential ninja-build git \
+    libssl-dev liburing-dev pkg-config \
+    clang-21 lld-21 libc++-21-dev libc++abi-21-dev locales \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN locale-gen en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
+
+ENV CC=/usr/bin/clang-21
+ENV CXX=/usr/bin/clang++-21
+
+WORKDIR /src
+COPY . .
+
+WORKDIR /build
+RUN cmake -S /src -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-stdlib=libc++" -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++ -lc++abi"
+RUN cmake --build /build --target Server -j$(nproc)
+
+# ==========================================
+# STAGE 2: Runtime
+# ==========================================
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies (OpenSSL, io_uring) and C++23 libraries
+RUN apt-get update && apt-get install -y \
+    ca-certificates gnupg wget software-properties-common \
+    && wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21 \
+    && apt-get update && apt-get install -y \
+    libssl-dev liburing-dev libc++-21-dev libc++abi-21-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+
+WORKDIR /app
+
+# Copy the built server binary
+COPY --from=builder /build/Server /app/Server
+
+# Provide the production config by default (can be overridden by volume mount)
+COPY config.prod.toml /app/config.toml
+
+EXPOSE 5000
+
+# Run the Hermes-Flow Server
+CMD ["./Server"]

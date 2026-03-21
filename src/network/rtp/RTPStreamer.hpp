@@ -34,29 +34,46 @@ class RTPStreamer {
     }
   }
 
-  void add_client(const std::string& ip, uint16_t port) {
+  void add_client(const std::string& host_or_ip, uint16_t port) {
     boost::system::error_code ec;
-    auto addr = boost::asio::ip::make_address(ip, ec);
-    if (ec) {
-      spdlog::error("Invalid IP: {} - {}", ip, ec.message());
-      return;
-    }
+    auto addr = boost::asio::ip::make_address(host_or_ip, ec);
+    udp::endpoint ep;
 
-    udp::endpoint ep(addr, port);
+    if (!ec) {
+      ep = udp::endpoint(addr, port);
+    } else {
+      asio::ip::udp::resolver resolver(socket_.get_executor());
+      auto results = resolver.resolve(host_or_ip, std::to_string(port), ec);
+      if (ec || results.empty()) {
+        spdlog::error("Invalid IP or Hostname: {} - {}", host_or_ip, ec.message());
+        return;
+      }
+      ep = *results.begin();
+    }
 
     if (!std::ranges::contains(clients_, ep)) {
       clients_.push_back(ep);
-      spdlog::info("RTP Client added: {}:{}", ip, port);
+      spdlog::info("RTP Client added: {}:{}", ep.address().to_string(), port);
     }
   }
 
-  void remove_client(const std::string& ip, uint16_t port) {
+  void remove_client(const std::string& host_or_ip, uint16_t port) {
     try {
-      auto addr = asio::ip::make_address(ip);
-      udp::endpoint ep(addr, port);
+      boost::system::error_code ec;
+      auto addr = asio::ip::make_address(host_or_ip, ec);
+      udp::endpoint ep;
+
+      if (!ec) {
+        ep = udp::endpoint(addr, port);
+      } else {
+        asio::ip::udp::resolver resolver(socket_.get_executor());
+        auto results = resolver.resolve(host_or_ip, std::to_string(port), ec);
+        if (ec || results.empty()) return;
+        ep = *results.begin();
+      }
 
       std::erase(clients_, ep);
-      spdlog::info("RTP Client removed: {}:{}", ip, port);
+      spdlog::info("RTP Client removed: {}:{}", ep.address().to_string(), port);
     } catch (...) {
     }
   }
