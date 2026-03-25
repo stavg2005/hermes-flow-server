@@ -49,10 +49,9 @@ int main(int argc, char* argv[]) {
   // Safety net for unexpected runtime crashes (e.g. std::bad_alloc)
   try {
     SetupLogging();
-
-    auto cfg_result = load_config("config.toml");
+    auto cfg_result = load_config("../config.toml");
     if (!cfg_result) {
-      cfg_result = load_config("../config.toml");
+      cfg_result = load_config("config.toml");
     }
 
     if (!cfg_result) {

@@ -43,7 +43,7 @@ class RTPStreamer {
       ep = udp::endpoint(addr, port);
     } else {
       asio::ip::udp::resolver resolver(socket_.get_executor());
-      auto results = resolver.resolve(host_or_ip, std::to_string(port), ec);
+      auto results = resolver.resolve(asio::ip::udp::v4(), host_or_ip, std::to_string(port), ec);
       if (ec || results.empty()) {
         spdlog::error("Invalid IP or Hostname: {} - {}", host_or_ip, ec.message());
         return;
@@ -67,7 +67,7 @@ class RTPStreamer {
         ep = udp::endpoint(addr, port);
       } else {
         asio::ip::udp::resolver resolver(socket_.get_executor());
-        auto results = resolver.resolve(host_or_ip, std::to_string(port), ec);
+        auto results = resolver.resolve(asio::ip::udp::v4(), host_or_ip, std::to_string(port), ec);
         if (ec || results.empty()) return;
         ep = *results.begin();
       }
@@ -97,15 +97,23 @@ class RTPStreamer {
     for (const auto& endpoint : clients_) {
       socket_.async_send_to(
           asio::buffer(*packet_owner, packet_size), endpoint,
-          [packet_owner](const boost::system::error_code& ec, std::size_t) {
-            if (ec) {
+          [this, packet_owner](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+            if (!ec) {
+               bytes_sent_.fetch_add(bytes_transferred, std::memory_order_relaxed);
+               packets_sent_.fetch_add(1, std::memory_order_relaxed);
+            } else {
               spdlog::debug("UDP send failed: {}", ec.message());
             }
           });
     }
   }
 
+  uint64_t get_bytes_sent() const { return bytes_sent_.load(std::memory_order_relaxed); }
+  uint64_t get_packets_sent() const { return packets_sent_.load(std::memory_order_relaxed); }
+
  private:
+  std::atomic<uint64_t> bytes_sent_{0};
+  std::atomic<uint64_t> packets_sent_{0};
   static constexpr int RING_BUFFER_SIZE = 16;
   std::array<std::shared_ptr<std::vector<uint8_t>>, RING_BUFFER_SIZE>
       packet_ring_;

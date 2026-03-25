@@ -42,6 +42,7 @@ Router::Router(ActiveSessions& active, std::shared_ptr<IoContextPool> pool)
 
 void Router::route_query(const req_t& req, res_t& res,
                          boost::beast::tcp_stream& stream) {
+  http_requests_total_.fetch_add(1, std::memory_order_relaxed);
   // We maintain one try-catch ONLY for truly unexpected crashes
   try {
     boost::urls::url_view url{req.target()};
@@ -60,38 +61,20 @@ void Router::route_query(const req_t& req, res_t& res,
       return handler();
     };
 
-    auto result_opt =
-        match_route("/transmit/", beast::http::verb::post,
-                    [&] { return handle_transmit(req, res); })
-            .or_else([&] {
-              return match_route("/preview/", beast::http::verb::post, [&] {
-                return handle_webrtc_request(req, res);
-              });
-            })
-            .or_else([&] {
-              return match_route("/connect/", beast::http::verb::get, [&] {
-                return handle_websocket_request(req, res, stream);
-              });
-            })
-            .or_else([&] {
-              return match_route("/stop/", beast::http::verb::post,
-                                 [&] { return handle_stop(req, res); });
-            })
-            .or_else([&] {
-              return match_route("/pause/", beast::http::verb::post,
-                                 [&] { return handle_pause(req, res); });
-            })
-            .or_else([&] {
-              return match_route("/resume/", beast::http::verb::post,
-                                 [&] { return handle_resume(req, res); });
-            })
-            .or_else([&] {
-              return match_route("/metrics", beast::http::verb::get,
-                                 [&] { return handle_metrics(req, res); });
-            });
+    // clang-format off
+    auto try_routes = [&]() -> std::expected<void, RouteError> {
+      if (auto match = match_route("/transmit/", beast::http::verb::post, [&] { return handle_transmit(req, res); })) { return *match; }
+      if (auto match = match_route("/preview/", beast::http::verb::post, [&] { return handle_webrtc_request(req, res); })) { return *match; }
+      if (auto match = match_route("/connect/", beast::http::verb::get, [&] { return handle_websocket_request(req, res, stream); })) { return *match; }
+      if (auto match = match_route("/stop/", beast::http::verb::post, [&] { return handle_stop(req, res); })) { return *match; }
+      if (auto match = match_route("/pause/", beast::http::verb::post, [&] { return handle_pause(req, res); })) { return *match; }
+      if (auto match = match_route("/resume/", beast::http::verb::post, [&] { return handle_resume(req, res); })) { return *match; }
+      if (auto match = match_route("/metrics", beast::http::verb::get, [&] { return handle_metrics(req, res); })) { return *match; }
 
-    auto result = result_opt.value_or(std::unexpected(
-        RouteError{beast::http::status::not_found, "Route not found"}));
+      return std::unexpected(RouteError{beast::http::status::not_found, "Route not found"});
+    };
+    // clang-format on
+    auto result = try_routes();
 
     if (!result) {
       auto err = result.error();
@@ -156,7 +139,7 @@ std::expected<void, RouteError> Router::handle_stop(const req_t& req,
   std::string id((*it)->value);
   auto status = active_.remove_session(id);
 
-  using enum ActiveSessions::RemoveStatus;
+  using enum ActiveSessions::SessionOpStatus;
 
   switch (status) {
     case Success:
@@ -184,7 +167,7 @@ std::expected<void, RouteError> Router::handle_pause(const req_t& req,
   std::string id((*it)->value);
   auto status = active_.pause_session(id);
 
-  using enum ActiveSessions::RemoveStatus;
+  using enum ActiveSessions::SessionOpStatus;
 
   switch (status) {
     case Success:
@@ -212,7 +195,7 @@ std::expected<void, RouteError> Router::handle_resume(const req_t& req,
   std::string id((*it)->value);
   auto status = active_.resume_session(id);
 
-  using enum ActiveSessions::RemoveStatus;
+  using enum ActiveSessions::SessionOpStatus;
 
   switch (status) {
     case Success:
@@ -263,13 +246,73 @@ std::expected<void, RouteError> Router::handle_websocket_request(
 
 std::expected<void, RouteError> Router::handle_metrics(const req_t& req,
                                                        res_t& res) {
-  std::string body =
-      "# HELP hermes_active_sessions_total Number of currently active audio sessions.\n"
-      "# TYPE hermes_active_sessions_total gauge\n"
-      "hermes_active_sessions_total " +
-      std::to_string(active_.size()) + "\n";
+  std::string body;
 
-  ResponseBuilder::build_plaintext_response(res, body, req.version(), req.keep_alive());
+  // Total HTTP Requests
+  body +=
+      "# HELP hermes_http_requests_total Total number of HTTP requests "
+      "processed.\n";
+  body += "# TYPE hermes_http_requests_total counter\n";
+  body += "hermes_http_requests_total " +
+          std::to_string(http_requests_total_.load(std::memory_order_relaxed)) +
+          "\n";
+
+  // Total Sessions Created
+  body +=
+      "# HELP hermes_total_sessions_created_total Total number of sessions "
+      "instantiated.\n";
+  body += "# TYPE hermes_total_sessions_created_total counter\n";
+  body += "hermes_total_sessions_created_total " +
+          std::to_string(active_.get_total_sessions_created()) + "\n";
+
+  // Active Sessions
+  body +=
+      "# HELP hermes_active_sessions_total Number of currently active audio "
+      "sessions.\n";
+  body += "# TYPE hermes_active_sessions_total gauge\n";
+  body +=
+      "hermes_active_sessions_total " + std::to_string(active_.size()) + "\n";
+
+  // Active WebSockets
+  body +=
+      "# HELP hermes_active_websockets_total Number of currently connected "
+      "WebSockets.\n";
+  body += "# TYPE hermes_active_websockets_total gauge\n";
+  body += "hermes_active_websockets_total " +
+          std::to_string(active_.get_active_websockets_count()) + "\n";
+
+  // Available WebRTC Ports
+  body +=
+      "# HELP hermes_available_webrtc_ports Number of WebRTC UDP ports "
+      "currently available.\n";
+  body += "# TYPE hermes_available_webrtc_ports gauge\n";
+  body += "hermes_available_webrtc_ports " +
+          std::to_string(active_.get_available_webrtc_ports_count()) + "\n";
+
+  // Per-session RTP stats
+  auto stats = active_.get_all_session_rtp_stats();
+  if (!stats.empty()) {
+    body +=
+        "# HELP hermes_rtp_bytes_sent_total Total RTP bytes sent by a "
+        "session.\n";
+    body += "# TYPE hermes_rtp_bytes_sent_total counter\n";
+    for (const auto& s : stats) {
+      body += "hermes_rtp_bytes_sent_total{session_id=\"" + s.id + "\"} " +
+              std::to_string(s.bytes_sent) + "\n";
+    }
+
+    body +=
+        "# HELP hermes_rtp_packets_sent_total Total RTP packets sent by a "
+        "session.\n";
+    body += "# TYPE hermes_rtp_packets_sent_total counter\n";
+    for (const auto& s : stats) {
+      body += "hermes_rtp_packets_sent_total{session_id=\"" + s.id + "\"} " +
+              std::to_string(s.packets_sent) + "\n";
+    }
+  }
+
+  ResponseBuilder::build_plaintext_response(res, body, req.version(),
+                                            req.keep_alive());
   return {};
 }
 

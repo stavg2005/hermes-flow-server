@@ -1,5 +1,5 @@
 [server]
-address = "127.0.0.1"
+address = "10.0.0.24"
 port = 5000
 threads = 4
 
@@ -13,6 +13,6 @@ region = "us-east-1"
 service ="s3"
 
 [janus]
-address = "10.0.0.33"
+address = "10.0.0.29"
 port_start = "10000"
 port_end ="10200"

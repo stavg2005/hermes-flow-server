@@ -1,7 +1,6 @@
 #include "DoubleBuffer.hpp"
 
 #include "Config.hpp"
-#include "nodes/AsyncAudioSource.hpp"
 using namespace hermes::config;
 namespace hermes::infra {
 

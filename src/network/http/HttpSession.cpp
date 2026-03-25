@@ -36,7 +36,6 @@ std::expected<std::shared_ptr<HttpSession>, ErrorInfo> HttpSession::create(
         AppError::LogicError, "HttpSession requires a valid Router"));
   }
 
-
   return std::shared_ptr<HttpSession>(
       new HttpSession(std::move(socket), std::move(router)));
 }
@@ -50,6 +49,7 @@ void HttpSession::run() {
       [self = shared_from_this()]() { return self->do_session(); },
       asio::detached);
 }
+
 asio::awaitable<void> HttpSession::do_session() {
   // This top-level try-catch is only for unrecoverable infrastructure crashes
   try {
@@ -59,49 +59,28 @@ asio::awaitable<void> HttpSession::do_session() {
       parser_->body_limit(1024 * 1024 * 10);  // 10MB limit
       stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
 
-
+      //reads results into parser
       auto read_result = co_await do_read_request();
 
       if (!read_result) {
-        beast::http::response<beast::http::string_body> err_res;
-        ResponseBuilder::build_error_response(
-            err_res, "Invalid Request: " + read_result.error().message, 11,
-            false, beast::http::status::bad_request);
-        //we specificly dont check for error here because if there is an error that means the client can no logner recive messeges  so it dosent matter
-        co_await do_write_response(err_res);
-
+        co_await handle_bad_request("Invalid Request: " +
+                                    read_result.error().message);
         break;
+      }
+
+      const auto& req = parser_->get();
+
+      // Check if we need to hand off the socket to the WebSocket Session
+
+      if (handle_websocket_upgrade(req)) {
+        co_return;  // End HTTP lifecycle, socket ownership moved
       }
 
       bool keep_alive = *read_result;
-      const auto& req = parser_->get();
 
-
-      if (beast::websocket::is_upgrade(req)) {
-        spdlog::info("Upgrading to WebSocket...");
-
-        beast::http::response<beast::http::string_body> dummy_res;
-        router_->route_query(req, dummy_res, stream_);
-
-        co_return;  // End HTTP lifecycle
-      }
-
-      auto res = do_build_response();
-
-      auto write_result = co_await do_write_response(res);
-
-      if (!write_result) {
-        spdlog::error("[HttpSession] Write failed: {}",
-                      write_result.error().message);
-
-        break;
-      }
-
-
-      if (!keep_alive) {
-        // Ignore result of close, we are exiting anyway
-        co_await do_graceful_close();
-        break;
+      // Process standard HTTP request
+      if (!co_await process_single_request(keep_alive)) {
+        break;  // Exit loop if write failed or keep_alive is false
       }
     }
   } catch (const std::exception& e) {
@@ -109,9 +88,50 @@ asio::awaitable<void> HttpSession::do_session() {
   }
 }
 
+asio::awaitable<void> HttpSession::handle_bad_request(
+    const std::string& error_msg) {
+  const auto version = parser_->get().version();  // Use actual HTTP version
+  beast::http::response<beast::http::string_body> err_res;
+  ResponseBuilder::build_error_response(err_res, error_msg, version, false,
+                                        beast::http::status::bad_request);
+  co_await do_write_response(err_res);
+}
+
+bool HttpSession::handle_websocket_upgrade(
+    const beast::http::request<beast::http::string_body>& req) {
+  if (beast::websocket::is_upgrade(req)) {
+    spdlog::info("Upgrading to WebSocket...");
+    // The router handles the WebSocket upgrade internally (via ActiveSessions).
+    // dummy_res is intentionally unused — the socket ownership is transferred
+    // into the WebSocket session inside route_query, not via the response.
+    beast::http::response<beast::http::string_body> dummy_res;
+    router_->route_query(req, dummy_res, stream_);
+    return true;
+  }
+  return false;
+}
+
+asio::awaitable<bool> HttpSession::process_single_request(bool keep_alive) {
+  //handles the response and builds it
+  auto res = do_build_response();
+  auto write_result = co_await do_write_response(res);
+
+  if (!write_result) {
+    spdlog::error("[HttpSession] Write failed: {}",
+                  write_result.error().message);
+    co_return false;
+  }
+
+  if (!keep_alive) {
+    co_await do_graceful_close();
+    co_return false;
+  }
+
+  co_return true;
+}
+
 asio::awaitable<std::expected<bool, ErrorInfo>> HttpSession::do_read_request() {
   beast::error_code ec;
-
 
   co_await beast::http::async_read_header(
       stream_, buffer_, *parser_,
@@ -126,10 +146,10 @@ asio::awaitable<std::expected<bool, ErrorInfo>> HttpSession::do_read_request() {
         std::unexpected(ErrorInfo::From(AppError::NetworkError, ec.message())));
   }
 
-
   if (!is_options_request()) {
-    co_await beast::http::async_read(stream_, buffer_, *parser_,
-                              asio::redirect_error(asio::use_awaitable, ec));
+    co_await beast::http::async_read(
+        stream_, buffer_, *parser_,
+        asio::redirect_error(asio::use_awaitable, ec));
 
     if (ec) {
       co_return std::unexpected(
@@ -150,9 +170,8 @@ asio::awaitable<std::expected<void, ErrorInfo>> HttpSession::do_write_response(
       tcp::no_delay(true),
       ec);  // Ignore error here, it's optional optimization
 
-  
-  co_await beast::http::async_write(stream_, res,
-                             asio::redirect_error(asio::use_awaitable, ec));
+  co_await beast::http::async_write(
+      stream_, res, asio::redirect_error(asio::use_awaitable, ec));
 
   if (ec) {
     co_return std::unexpected(
@@ -173,7 +192,6 @@ HttpSession::do_graceful_close() {
     co_return std::unexpected(
         ErrorInfo::From(AppError::NetworkError, ec.message()));
   }
-
 
   beast::flat_buffer drain;
   try {
@@ -196,7 +214,8 @@ HttpSession::do_graceful_close() {
 bool HttpSession::is_options_request() const {
   return parser_->get().method() == beast::http::verb::options;
 }
-beast::http::response<beast::http::string_body> HttpSession::do_build_response() {
+beast::http::response<beast::http::string_body>
+HttpSession::do_build_response() {
   beast::http::response<beast::http::string_body> res;
   const auto& req = parser_->get();
 

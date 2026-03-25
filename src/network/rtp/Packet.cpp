@@ -24,17 +24,9 @@ namespace hermes::net::rtp {
 static constexpr size_t MINIMUM_HEADER_SIZE = 12;
 static constexpr size_t MINIMUM_EXTENSION_SIZE = 4;
 
+
 RTPPacket::RTPPacket(Header header, boost::span<const uint8_t> payload)
     : header(std::move(header)), payload(payload) {}
-
-RTPPacket::RTPPacket(RTPPacket&& other) noexcept
-    : header(std::move(other.header)), payload(other.payload) {}
-
-RTPPacket& RTPPacket::operator=(RTPPacket&& other) noexcept {
-  header = std::move(other.header);
-  payload = other.payload;
-  return *this;
-}
 
 RTPPacket::Header::Header(const bool padding, const uint8_t version,
                           const uint8_t payload_type, const bool marker,
@@ -51,47 +43,10 @@ RTPPacket::Header::Header(const bool padding, const uint8_t version,
       csrc_list(std::move(csrc_list)),
       extension(std::move(extension)) {}
 
-RTPPacket::Header::Header(RTPPacket::Header&& other) noexcept
-    : padding(other.padding),
-      version(other.version),
-      payload_type(other.payload_type),
-      marker(other.marker),
-      sequence_num(other.sequence_num),
-      timestamp(other.timestamp),
-      ssrc(other.ssrc),
-      csrc_list(std::move(other.csrc_list)),
-      extension(std::move(other.extension)) {}
-
-RTPPacket::Header& RTPPacket::Header::operator=(
-    RTPPacket::Header&& other) noexcept {
-  padding = other.padding;
-  version = other.version;
-  payload_type = other.payload_type;
-  marker = other.marker;
-  sequence_num = other.sequence_num;
-  timestamp = other.timestamp;
-  ssrc = other.ssrc;
-  csrc_list = std::move(other.csrc_list);
-  extension = std::move(other.extension);
-
-  return *this;
-}
-
 RTPPacket::Header::Extension::Extension(const uint16_t id,
                                         std::vector<uint32_t> data)
     : id(id), data(std::move(data)) {}
 
-RTPPacket::Header::Extension::Extension(
-    RTPPacket::Header::Extension&& other) noexcept
-    : id(other.id), data(std::move(other.data)) {}
-
-RTPPacket::Header::Extension& RTPPacket::Header::Extension::operator=(
-    RTPPacket::Header::Extension&& other) noexcept {
-  id = other.id;
-  data = std::move(other.data);
-
-  return *this;
-}
 
 void RTPPacket::add_ssrc(const uint32_t new_ssrc) {
   header.csrc_list.push_back(header.ssrc);

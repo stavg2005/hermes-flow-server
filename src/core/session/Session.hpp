@@ -69,9 +69,11 @@ class Session : public std::enable_shared_from_this<Session> {
 
   void resume();
 
-  void ConfigureClientsRoutes();
 
   std::optional<uint16_t> get_webrtc_port() const { return janus_port_; }
+  uint64_t get_rtp_bytes_sent() const;
+  uint64_t get_rtp_packets_sent() const;
+  std::string get_id() const { return id_; }
   /**
    * @brief Adds a target client for RTP streaming.
    *
@@ -94,46 +96,6 @@ class Session : public std::enable_shared_from_this<Session> {
    */
   bool is_running() const;
 
-  /**
-   * @brief Scans the graph for 'ClientsNode' and registers them with the
-   * RTPStreamer.
-   */
-  void configure_streamer_from_graph();
-
-  /**
-   * @brief Prepares the audio graph for execution asynchronously.
-   *
-   * Delegates to AudioExecutor::Prepare(), which handles file fetching (S3)
-   * and buffer pre-filling.
-   *
-   * @return true or false if it failed
-   */
-  boost::asio::awaitable<bool> initialize_graph_execution();
-
-  /**
-   * @brief Evaluates the status returned by the AudioExecutor after processing
-   * a frame.
-   *
-   * Handles error logging and reporting to the observer.
-   *
-   * @param status The NodeError returned from the processing step.
-   * @return true ot alse If the session should continue or stop based on the
-   * error
-   */
-  bool is_status_ok(config::NodeErrorCode status);
-
-  /**
-   * @brief Sends updated statistics to the observer
-   * @param last_stats_time  the timestamp of the last update.
-   */
-  void update_stats_if_needed(
-      std::chrono::steady_clock::time_point& last_stats_time);
-
-  /**
-   * @brief Handles the clean shutdown of a session.
-   */
-  void finalize_session(const config::NodeError& result);
-
  private:
   asio::io_context& io_;
   std::string id_;
@@ -148,5 +110,64 @@ class Session : public std::enable_shared_from_this<Session> {
   signal_channel resume_channel_;
   asio::steady_timer timer_;
   std::unique_ptr<ISessionObserver> observer_;
+
+  /**
+   * @brief Scans the graph for 'ClientsNode' and registers them with the
+   * RTPStreamer.
+   */
+  void configure_streamer_from_graph();
+
+  /**
+   * @brief Prepares the audio graph for execution asynchronously.
+   * Delegates to AudioExecutor::prepare(), which handles S3 fetching and
+   * buffer pre-filling.
+   * @return true on success, false on failure.
+   */
+  boost::asio::awaitable<bool> initialize_graph_execution();
+
+  /**
+   * @brief Evaluates the status returned by the AudioExecutor after a frame.
+   * @return true if the session should continue, false on critical error.
+   */
+  bool is_status_ok(config::NodeErrorCode status);
+
+  /**
+   * @brief Sends updated statistics to the observer if interval has elapsed.
+   */
+  void update_stats_if_needed(
+      std::chrono::steady_clock::time_point& last_stats_time);
+
+  /**
+   * @brief Handles session teardown; notifies the observer of the final result.
+   */
+  void finalize_session(const config::NodeError& result);
+
+  /**
+   * @brief The core audio loop (AUDIO_TICK_INTERVAL ticks).
+   */
+  boost::asio::awaitable<std::expected<void, config::NodeError>>
+  run_main_audio_loop();
+
+  /**
+   * @brief Suspends the coroutine until the resume channel receives a signal.
+   */
+  boost::asio::awaitable<void> wait_for_resume(
+      std::chrono::steady_clock::time_point& next_tick,
+      std::chrono::steady_clock::time_point& last_stats_time);
+
+  /**
+   * @brief Waits for the next 20ms tick.
+   * @return false if the timer was aborted (session stopping), true otherwise.
+   */
+  boost::asio::awaitable<std::expected<void, config::NodeError>>
+  wait_for_next_tick(std::chrono::steady_clock::time_point& next_tick);
+
+  /**
+   * @brief Fetches a frame from the executor and dispatches it.
+   * @return false if the executor signaled the end of the stream.
+   */
+  std::expected<void, config::NodeError> process_and_stream_single_frame(
+      std::span<uint8_t> pcm_buffer,
+      std::chrono::steady_clock::time_point& last_stats_time);
 };
 }  // namespace hermes::service

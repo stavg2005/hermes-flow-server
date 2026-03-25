@@ -55,6 +55,19 @@ class AudioExecutor {
    */
   void update_mixers();
 
+  /**
+   * @brief Handles the lifecycle teardown of the current node and advances the
+   * graph.
+   * @return std::expected containing void on success, or a NodeError if close()
+   * fails.
+   */
+  std::expected<void, config::NodeError> advance_to_next_node();
+
+    /**
+   * @brief Traverses the graph to find any cycles (loops) and flags the involved nodes.
+   */
+  void detect_and_flag_loops() const;
+
   boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
   ensure_assets_exist();
 

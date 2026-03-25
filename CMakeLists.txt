@@ -153,6 +153,7 @@ set(SOURCES_INFRA
     src/core/config/Config.cpp
     src/infra/audio/DoubleBuffer.cpp
     src/infra/audio/PitchShifter.cpp
+    src/infra/io/AsyncBufferController.cpp
 )
 
 # Network
@@ -177,7 +178,6 @@ set(SOURCES_CORE
     src/core/graph/Node.cpp
      src/core/graph/nodes/FileInputNode.cpp
      src/core/graph/nodes/MixerNode.cpp
-     src/core/graph/nodes/AsyncAudioSource.cpp
     src/core/graph/AudioExecutor.cpp
 )
 

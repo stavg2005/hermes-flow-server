@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <chrono>
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 #include <boost/json.hpp>
@@ -11,11 +12,14 @@ namespace json = boost::json;
 namespace asio = boost::asio;
 namespace http = boost::beast::http;
 namespace sys = boost::system;
-namespace json = boost::json;
 namespace websocket = boost::beast::websocket;
 namespace beast = boost::beast;
 using tcp = boost::asio::ip::tcp;
 using udp = boost::asio::ip::udp;
+
+/// The real-time audio frame tick interval (20ms = 50 frames/sec, 160 PCM samples @ 8kHz)
+constexpr auto AUDIO_TICK_INTERVAL = std::chrono::milliseconds(20);
+
 enum class NodeErrorCode : std::uint8_t {
   Success = 0,
   Underrun,
@@ -90,6 +94,5 @@ inline std::string_view to_string(NodeErrorCode err) {
     default:
       return "Unknown Error";
   }
-  return "Unknown Error";
 }
 };  // namespace hermes::config

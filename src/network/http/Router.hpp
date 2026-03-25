@@ -48,8 +48,16 @@ class Router {
   std::expected<void, RouteError> handle_pause(const req_t& req, res_t& res);
   std::expected<void, RouteError> handle_resume(const req_t& req, res_t& res);
   std::expected<void, RouteError> handle_metrics(const req_t& req, res_t& res);
+
+  /// Shared helper: extracts ?id=, calls op(), maps result to HTTP response.
+  using SessionOp =
+      std::function<service::ActiveSessions::SessionOpStatus(const std::string&)>;
+  std::expected<void, RouteError> handle_session_id_op(
+      const req_t& req, res_t& res, SessionOp op);
+
   // Server owns both, and Server ensures Router dies before ActiveSessions.
   hermes::service::ActiveSessions& active_;
   std::shared_ptr<IoContextPool> pool_;
+  std::atomic<uint64_t> http_requests_total_{0};
 };
 }  // namespace hermes::net::http

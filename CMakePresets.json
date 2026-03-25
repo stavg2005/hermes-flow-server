@@ -26,8 +26,10 @@
         "rhs": "Windows"
       },
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
+        "CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
+        "CMAKE_C_COMPILER_LAUNCHER": "sccache",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "sccache",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
@@ -46,6 +48,16 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++"
       }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-clang-vcpkg",
+      "configurePreset": "windows-clang-vcpkg"
+    },
+    {
+      "name": "linux-clang",
+      "configurePreset": "linux-clang"
     }
   ]
 }

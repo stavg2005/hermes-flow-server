@@ -20,31 +20,32 @@ class HttpSession : public std::enable_shared_from_this<HttpSession> {
   static std::expected<std::shared_ptr<HttpSession>, ErrorInfo> create(
       tcp::socket socket, std::shared_ptr<Router> router);
 
-  // Entry point: launches the session coroutine
   void run();
 
  private:
   HttpSession(tcp::socket&& socket, std::shared_ptr<Router> router);
+
   // Core Logic
   asio::awaitable<void> do_session();
 
 
+  asio::awaitable<void> handle_bad_request(const std::string& error_msg);
+  bool handle_websocket_upgrade(const beast::http::request<beast::http::string_body>& req);
+  asio::awaitable<bool> process_single_request(bool keep_alive);
+
+
   asio::awaitable<std::expected<bool, ErrorInfo>> do_read_request();
-
-
   asio::awaitable<std::expected<void, ErrorInfo>> do_write_response(
       beast::http::response<beast::http::string_body>& res);
-
-
   asio::awaitable<std::expected<void, ErrorInfo>> do_graceful_close();
 
   bool is_options_request() const;
   beast::http::response<beast::http::string_body> do_build_response();
+
   beast::tcp_stream stream_;
   std::shared_ptr<Router> router_;
   beast::flat_buffer buffer_;
 
-  // Use optional to reuse parser memory
   std::optional<beast::http::request_parser<beast::http::string_body>> parser_;
 };
 

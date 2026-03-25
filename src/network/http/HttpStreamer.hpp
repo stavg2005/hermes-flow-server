@@ -37,18 +37,15 @@ class HttpStreamer {
       stream_.expires_after(std::chrono::seconds(30));
       auto connect_res = co_await connect(host, port);
       if (!connect_res) co_return std::unexpected(connect_res.error());
-      spdlog::debug("after connect");
 
       stream_.expires_after(std::chrono::seconds(30));
       co_await http::async_write(stream_, req, asio::use_awaitable);
-      spdlog::debug("after write");
       beast::flat_buffer buffer;
       http::response_parser<http::empty_body> parser;
       parser.body_limit(2ULL * 1024 * 1024 * 1024);  // 2GB Limit
 
       co_await http::async_read_header(stream_, buffer, parser,
                                        asio::use_awaitable);
-      spdlog::debug("after read headers");
       if (parser.get().result() != http::status::ok) {
         co_return co_await handle_error_response(std::move(parser), buffer);
       }
@@ -108,43 +105,66 @@ class HttpStreamer {
     return 0;
   }
 
+  /**
+   * @brief Flushes any body data caught in the Beast flat_buffer during header
+   * parsing.
+   */
+  template <config::AsyncWriteStream Sink>
+  asio::awaitable<size_t> drain_residual_buffer(Sink& sink,
+                                                beast::flat_buffer& buffer) {
+    size_t written = 0;
+    if (buffer.size() > 0) {
+      written =
+          co_await asio::async_write(sink, buffer.data(), asio::use_awaitable);
+      buffer.consume(buffer.size());
+    }
+    co_return written;
+  }
+
+  /**
+   * @brief Main transfer loop. Reads from the TCP stream and writes to the Sink
+   * until EOF or target size.
+   */
+  template <config::AsyncWriteStream Sink>
+  asio::awaitable<size_t> transfer_stream_data(Sink& sink,
+                                               size_t remaining_size) {
+    size_t total_written = 0;
+    auto shared_buf =
+        std::make_shared<std::vector<uint8_t>>(512 * 1024);  // 512KB chunk
+
+    // If remaining_size is 0, we read until the socket throws EOF (e.g.,
+    // chunked transfer).
+    while (remaining_size == 0 || total_written < remaining_size) {
+      size_t bytes_read = co_await stream_.async_read_some(
+          asio::buffer(*shared_buf), asio::use_awaitable);
+
+      if (bytes_read == 0) break;
+
+      size_t written = co_await asio::async_write(
+          sink, asio::buffer(*shared_buf, bytes_read), asio::use_awaitable);
+
+      total_written += written;
+    }
+
+    co_return total_written;
+  }
+
   template <config::AsyncWriteStream Sink>
   asio::awaitable<std::expected<void, config::ErrorInfo>> stream_to_sink(
       Sink& sink, beast::flat_buffer& buffer, size_t expected_size) {
     size_t total_written = 0;
 
     try {
-      // 1. Write initial buffer (header leftovers)
-      if (buffer.size() > 0) {
-        // Create a copy of the data views because async_write needs them valid
-        // Note: buffer.data() is valid as long as buffer isn't modified during
-        // write
-        size_t written = co_await asio::async_write(sink, buffer.data(),
-                                                    asio::use_awaitable);
-        total_written += written;
-        buffer.consume(buffer.size());
+      // Step 1: Drain initial buffer (header leftovers)
+      total_written += co_await drain_residual_buffer(sink, buffer);
+
+      // Step 2: Stream remaining data directly from socket to sink
+      if (expected_size == 0 || total_written < expected_size) {
+        size_t remaining =
+            (expected_size > 0) ? (expected_size - total_written) : 0;
+        total_written += co_await transfer_stream_data(sink, remaining);
       }
 
-      auto shared_buf = std::make_shared<std::vector<uint8_t>>(512 * 1024);
-
-      while (true) {
-        if (expected_size > 0 && total_written >= expected_size) {
-          break;
-        }
-        size_t bytes_read = 0;
-
-        // 2. Read from Socket
-        bytes_read = co_await stream_.async_read_some(asio::buffer(*shared_buf),
-                                                      asio::use_awaitable);
-
-        if (bytes_read == 0) break;
-
-        // 3. Write to File (Sink)
-        size_t written = co_await asio::async_write(
-            sink, asio::buffer(*shared_buf, bytes_read), asio::use_awaitable);
-
-        total_written += written;
-      }
     } catch (const boost::system::system_error& e) {
       // EOF is normal for reads, but critical for writes or unexpected read
       // errors
@@ -161,12 +181,12 @@ class HttpStreamer {
           "Critical stream exception: " + std::string(e.what())));
     }
 
-    // Basic validation
+    // Step 3: Validation
     if (expected_size > 0 && total_written != expected_size) {
       co_return std::unexpected(config::ErrorInfo::From(
           config::AppError::NetworkError,
-          "Download truncated. Expected: " + std::to_string(expected_size) +
-              ", Got: " + std::to_string(total_written)));
+          std::format("Download truncated. Expected: {}, Got: {}",
+                      expected_size, total_written)));
     }
 
     co_return std::expected<void, config::ErrorInfo>();

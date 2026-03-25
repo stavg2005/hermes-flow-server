@@ -18,7 +18,7 @@ struct ISessionObserver {
 
   virtual void on_stats_update(const SessionStats& stats) = 0;
 
-  virtual void on_webrtc_request(uint16_t& port) =0;
+  virtual void on_webrtc_request(uint16_t& port) = 0;
 
   virtual void on_node_transition(const std::string& node_id) = 0;
 
@@ -26,4 +26,4 @@ struct ISessionObserver {
 
   virtual void on_error(const std::string& error_message) = 0;
 };
-}  // namespace hermese::service
+}  // namespace hermes::service

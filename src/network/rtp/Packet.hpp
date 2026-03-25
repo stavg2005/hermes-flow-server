@@ -26,9 +26,9 @@ struct RTPPacket {
 
       Extension() = default;
       Extension(uint16_t id, std::vector<uint32_t> data);
-      Extension(Extension&& other) noexcept;
+      Extension(Extension&&) noexcept = default;
       Extension(const Extension&) = default;
-      Extension& operator=(Extension&& other) noexcept;
+      Extension& operator=(Extension&&) noexcept = default;
       Extension& operator=(const Extension&) = default;
     };
 
@@ -38,9 +38,9 @@ struct RTPPacket {
     Header(bool padding, uint8_t version, uint8_t payload_type, bool marker,
            uint16_t sequence_num, uint32_t timestamp, uint32_t ssrc,
            std::vector<uint32_t> csrc_list, std::optional<Extension> extension);
-    Header(Header&& other) noexcept;
+    Header(Header&&) noexcept = default;
     Header(const Header&) = default;
-    Header& operator=(Header&& other) noexcept;
+    Header& operator=(Header&&) noexcept = default;
     Header& operator=(const Header&) = default;
   } header;
 
@@ -48,9 +48,9 @@ struct RTPPacket {
 
   RTPPacket() = default;
   RTPPacket(Header header, boost::span<const uint8_t> payload);
-  RTPPacket(RTPPacket&& other) noexcept;
+  RTPPacket(RTPPacket&&) noexcept = default;
   RTPPacket(const RTPPacket&) = default;
-  RTPPacket& operator=(RTPPacket&& other) noexcept;
+  RTPPacket& operator=(RTPPacket&&) noexcept = default;
   RTPPacket& operator=(const RTPPacket&) = default;
 
   [[nodiscard]] static std::optional<RTPPacket> from_buffer(

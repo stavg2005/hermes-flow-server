@@ -21,6 +21,13 @@
 
 using namespace hermes::infra;
 namespace hermes::service {
+
+struct SessionRtpStats {
+  std::string id;
+  uint64_t bytes_sent;
+  uint64_t packets_sent;
+};
+
 /**
  * @brief manages session lifecycle and websocket association.
  */
@@ -56,16 +63,34 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
       const std::string& audio_session_id, const req_t& req,
       boost::beast::tcp_stream& stream);
 
-  enum class RemoveStatus { Success, SessionNotFound, WebSocketNotFound };
-  RemoveStatus remove_session(const std::string& id);
+  /**
+   * @brief Internal helper to allocate a WebRTC port from the pool.
+   * @return The allocated port or std::nullopt if pool is empty.
+   */
+  std::optional<uint16_t> allocate_webrtc_port();
 
-  RemoveStatus pause_session(const std::string& id);
+  /**
+   * @brief Encapsulates the logic for attaching a WebSocket and spawning the session.
+   */
+  void spawn_session_coroutine(const std::string& id,
+                               std::shared_ptr<Session> session,
+                               std::shared_ptr<net::websocket::WebSocketSession> ws);
 
-  ActiveSessions::RemoveStatus resume_session(const std::string& id);
+  enum class SessionOpStatus { Success, SessionNotFound, WebSocketNotFound };  // NOLINT
+  SessionOpStatus remove_session(const std::string& id);
+
+  SessionOpStatus pause_session(const std::string& id);
+
+  ActiveSessions::SessionOpStatus resume_session(const std::string& id);
 
   std::shared_ptr<Session> get(const std::string& id) const;
   std::vector<std::string> list_ids() const;
   std::size_t size() const noexcept;
+
+  std::vector<SessionRtpStats> get_all_session_rtp_stats() const;
+  uint64_t get_total_sessions_created() const;
+  std::size_t get_active_websockets_count() const;
+  std::size_t get_available_webrtc_ports_count() const;
 
   void stop_all();
   void on_session_stopped(const std::string& id);
@@ -77,6 +102,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
   mutable std::mutex mutex_;
 
   IoContextPool& pool_;
+  /// Monotonic counter for observability only — NOT the session key (UUIDs are used for that).
   std::atomic<int64_t> next_session_id_{0};
   boost::uuids::random_generator generator_;
   config::AppConfig cfg_;
