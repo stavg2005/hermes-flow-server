@@ -27,11 +27,11 @@ struct FileInputNode : public Node, public IAudioProcessor, public IAsyncInitial
   FileOptionsNode* options_ = nullptr;
   PitchShifter pitch_shifter_;
 
+
   // WAV Header Parsing State
   bool is_first_read_ = true;
-  size_t header_offset_ = 0;
 
-  // Frame Tracking (Moved from old AsyncAudioSource base)
+  // Frame Tracking 
   int total_frames_ = 0;
   int processed_frames_ = 0;
 
@@ -51,6 +51,8 @@ struct FileInputNode : public Node, public IAudioProcessor, public IAsyncInitial
   virtual std::expected<void, config::NodeError> connect_input(
       Node* source) override;
 
+  virtual void set_in_loop(bool val) override;
+
   /**
    * @brief The ONE thing this class must do: fetch bytes from disk.
    * AsyncBufferController handles the double-buffering logic automatically.
@@ -62,10 +64,6 @@ struct FileInputNode : public Node, public IAudioProcessor, public IAsyncInitial
    */
   void apply_effects(std::span<uint8_t> frame_buffer);
 
-  /**
-   * @brief Override to handle WAV header skipping on the first buffer.
-   */
-  size_t get_read_offset(std::span<uint8_t> buffer);
 
   std::expected<void, config::NodeError> open();
   std::expected<void, config::NodeError> close() override;

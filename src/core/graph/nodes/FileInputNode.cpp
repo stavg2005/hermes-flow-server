@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <chrono>
 #include <expected>
+#include <fstream>
+#include <vector>
 
 #include "BasicNodes.hpp"
 #include "FileSink.hpp"
@@ -59,13 +61,13 @@ std::expected<void, NodeError> FileInputNode::open() {
 
 std::expected<void, NodeError> FileInputNode::close() {
   boost::system::error_code ec;
-  file_handle_.close(ec);  // NOLINT
+    file_handle_.close(ec);  // NOLINT
 
   if (ec) {
     return error(NodeErrorCode::FileIOError, "Failed to close file {} {}: {}",
                  file_name_, file_path_, ec.message());
   }
-
+  spdlog::info("closed file input {}", file_name_);
   // Reset internal state for potential reuse
   is_first_read_ = true;
   processed_frames_ = 0;
@@ -94,7 +96,7 @@ std::expected<void, NodeError> FileInputNode::close() {
   return {};
 }
 
-// --- NEW DELEGATED METHODS ---
+void FileInputNode::set_in_loop(bool val) { is_in_loop_ = val; }
 
 boost::asio::awaitable<void> FileInputNode::initialize_buffers() {
   co_await buffer_controller_->initialize_buffers();
@@ -108,9 +110,8 @@ std::expected<void, config::NodeError> FileInputNode::process_frame(
     return error(NodeErrorCode::EndOfStream, "End of stream for {}", id_);
   }
 
-  // 2. Fetch data via the controller, handling WAV offset
-  size_t offset = get_read_offset(buffer);
-  auto result = buffer_controller_->get_frame(buffer, offset);
+  // 2. Fetch data via the controller
+  auto result = buffer_controller_->get_frame(buffer, 0);
 
   if (!result) {
     return result;  // Return Underruns upstream
@@ -144,6 +145,18 @@ boost::asio::awaitable<size_t> FileInputNode::fetch_bytes(
         boost::asio::as_tuple(boost::asio::use_awaitable));
 
     if (!ec || ec == boost::asio::error::eof) {
+      if (this->is_first_read_ && bytes_read > 0) {
+        size_t offset = wav::get_audio_data_offset(std::span<uint8_t>(dest.data(), bytes_read));
+        if (offset > 0 && offset < bytes_read) {
+          std::memmove(dest.data(), dest.data() + offset, bytes_read - offset);
+          size_t extra_needed = offset;
+          auto [ec2, extra_bytes] = co_await boost::asio::async_read(
+              file_handle_, boost::asio::buffer(dest.data() + bytes_read - offset, extra_needed),
+              boost::asio::as_tuple(boost::asio::use_awaitable));
+          bytes_read = bytes_read - offset + extra_bytes;
+        }
+        this->is_first_read_ = false;
+      }
       // Base class handles zero-filling if bytes_read < dest.size()
       co_return bytes_read;
     } else {
@@ -161,18 +174,12 @@ boost::asio::awaitable<size_t> FileInputNode::fetch_bytes(
   co_return 0;
 }
 
-size_t FileInputNode::get_read_offset(std::span<uint8_t> buffer) {
-  if (is_first_read_) {
-    size_t offset = wav::get_audio_data_offset(buffer);
-    is_first_read_ = false;
-    return offset;
-  }
-  return 0;
-}
+
 
 void FileInputNode::apply_effects(std::span<uint8_t> frame_buffer) {
-  if (options_ == nullptr) { return;
-}
+  if (options_ == nullptr) {
+    return;
+  }
 
   auto* samples = reinterpret_cast<int16_t*>(frame_buffer.data());
   size_t num_samples = frame_buffer.size() / sizeof(int16_t);

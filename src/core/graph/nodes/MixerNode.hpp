@@ -23,7 +23,7 @@ struct MixerNode : Node, IAudioProcessor {
 
   explicit MixerNode(Node* t = nullptr);
 
-
+  virtual void set_in_loop(bool val) override;
   IAudioProcessor* as_audio() override;
   std::expected<void, config::NodeError> process_frame(
       std::span<uint8_t> frame_buffer) override;

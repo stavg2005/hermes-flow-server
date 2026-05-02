@@ -21,6 +21,8 @@ struct FileOptionsNode : Node {
   explicit FileOptionsNode(Node* t = nullptr) : Node(t) {
     kind_ = NodeKind::FileOptions;
   }
+
+  void set_in_loop(bool val) override { is_in_loop_ = val; };
 };
 
 // =========================================================
@@ -37,6 +39,7 @@ struct ClientsNode : Node {
     clients.emplace(std::move(ip), port);
   }
 
+  void set_in_loop(bool val) override { is_in_loop_ = val; };
   // Override to enforce rule: Clients cannot have inputs
   std::expected<void, config::NodeError> connect_input(Node* source) override {
     return {};
@@ -63,7 +66,7 @@ struct DelayNode : Node, IAudioProcessor {
   }
 
   IAudioProcessor* as_audio() override { return this; }
-
+  void set_in_loop(bool val) override { is_in_loop_ = val; };
   std::expected<void, config::NodeError> process_frame(
       std::span<uint8_t> frame_buffer) override {
     // Fill buffer with silence (0)

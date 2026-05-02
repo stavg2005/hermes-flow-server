@@ -64,6 +64,13 @@ std::expected<void, NodeError> MixerNode::connect_input(Node* source) {
   return {};
 }
 
+void MixerNode::set_in_loop(bool val){
+  is_in_loop_ =val;
+  for(auto& input:inputs_){
+    input.node->set_in_loop(val);
+  }
+}
+
 std::expected<void, NodeError> MixerNode::close() {
   for (auto& source : inputs_) {
     auto result = source.audio->close();

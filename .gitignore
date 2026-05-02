@@ -18,6 +18,8 @@
 *.code-workspace
 /janus_conf/
 /demos/
+config.toml
+config.prod.toml
 # ───────────── OS-specific files ─────────────
 .DS_Store         # macOS
 Thumbs.db         # Windows
@@ -32,6 +34,7 @@ Thumbs.db         # Windows
 *.dll
 *.dylib
 *.clang-format
+*.toml
 # ───────────── Logs ─────────────
 *.log
 .cache/
