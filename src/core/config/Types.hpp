@@ -28,7 +28,8 @@ enum class NodeErrorCode : std::uint8_t {
   FormatError,
   InternalError,
   InitializationFailed,
-  Critical
+  Critical,
+  NotSupported
 };
 
 enum class AppError : std::uint8_t {

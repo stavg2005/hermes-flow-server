@@ -2,10 +2,14 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <toml++/toml.hpp>
 
 namespace hermes::config {
+constexpr uint16_t DEFAULT_SERVER_PORT = 8080;
+constexpr uint16_t DEFAULT_JANUS_PORT_START = 10000;
+constexpr uint16_t DEFAULT_JANUS_PORT_END = 10200;
 
 template <typename T>
 std::expected<T, std::string> require_key(
@@ -35,14 +39,14 @@ std::expected<AppConfig, ErrorInfo> load_config(const std::string& path) {
         ErrorInfo::From(AppError::ConfigError, std::string(err.description())));
   }
 
-  // 1. Server Settings
+  // Server Settings
   if (auto server = tbl["server"]) {
     config.server.address = server["address"].value_or("0.0.0.0");
-    config.server.port = server["port"].value_or<uint16_t>(8080);
+    config.server.port = server["port"].value_or<uint16_t>(uint16_t{DEFAULT_SERVER_PORT});
     config.server.threads = server["threads"].value_or<unsigned int>(1);
   }
 
-  // 2. S3 Settings
+  // S3 Settings
   if (auto s3 = tbl["s3"]) {
     config.s3.host = s3["host"].value_or("localhost");
     config.s3.port = s3["port"].value_or("9000");
@@ -50,25 +54,31 @@ std::expected<AppConfig, ErrorInfo> load_config(const std::string& path) {
     config.s3.region = s3["region"].value_or("us-east-1");
     config.s3.service = s3["service"].value_or("s3");
 
-    auto access_key = require_key<std::string>(s3, "access_key");
-    if (!access_key) {
-      return std::unexpected(
-          ErrorInfo::From(AppError::ConfigError, access_key.error()));
+    if (const char* env_ak = std::getenv("S3_ACCESS_KEY")) {
+      config.s3.access_key = env_ak;
+    } else {
+      auto ak_res = require_key<std::string>(s3, "access_key");
+      if (!ak_res) {
+        return std::unexpected(ErrorInfo::From(AppError::ConfigError, "Missing S3 access_key"));
+      }
+      config.s3.access_key = *ak_res;
     }
-    config.s3.access_key = *access_key;
 
-    auto secret_key = require_key<std::string>(s3, "secret_key");
-    if (!secret_key) {
-      return std::unexpected(
-          ErrorInfo::From(AppError::ConfigError, secret_key.error()));
+    if (const char* env_sk = std::getenv("S3_SECRET_KEY")) {
+      config.s3.secret_key = env_sk;
+    } else {
+      auto sk_res = require_key<std::string>(s3, "secret_key");
+      if (!sk_res) {
+        return std::unexpected(ErrorInfo::From(AppError::ConfigError, "Missing S3 secret_key"));
+      }
+      config.s3.secret_key = *sk_res;
     }
-    config.s3.secret_key = *secret_key;
   }
 
   if (auto janus = tbl["janus"]) {
     config.janus.address = janus["address"].value_or("127.0.0.1");
-    config.janus.port_start = janus["port_start"].value_or<uint16_t>(10000);
-    config.janus.port_end = janus["port_end"].value_or<uint16_t>(10200);
+    config.janus.port_start = janus["port_start"].value_or<uint16_t>(uint16_t{DEFAULT_JANUS_PORT_START});
+    config.janus.port_end = janus["port_end"].value_or<uint16_t>(uint16_t{DEFAULT_JANUS_PORT_END});
   }
 
   spdlog::info("Loaded configuration from {}", path);

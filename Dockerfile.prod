@@ -42,13 +42,14 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime dependencies (OpenSSL, io_uring) and C++23 libraries
-RUN apt-get update && apt-get install -y \
+# Install runtime dependencies (OpenSSL, io_uring) and C++ runtime libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates gnupg wget software-properties-common \
     && wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21 \
-    && apt-get update && apt-get install -y \
-    libssl-dev liburing-dev libc++-21-dev libc++abi-21-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get update && apt-get install -y --no-install-recommends \
+    libssl3 liburing2 libc++1-21 libc++abi1-21 \
+    && apt-get purge -y --auto-remove gnupg wget software-properties-common \
+    && rm -rf /var/lib/apt/lists/* /llvm.sh
 
 
 WORKDIR /app

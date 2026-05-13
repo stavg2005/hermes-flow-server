@@ -29,8 +29,20 @@ endif()
 
 # Windows specific definitions
 if(WIN32)
-    add_definitions(-D_WIN32_WINNT=0x0601 -DWIN32_LEAN_AND_MEAN -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS)
+    add_compile_definitions(
+_WIN32_WINNT=0x0A00  # Valid: Tells Boost/ASIO you are targeting Windows 10/11
+        WIN32_LEAN_AND_MEAN  # Valid: Excludes rarely-used Windows API headers
+        NOMINMAX             # Valid: Prevents Windows.h from hijacking std::min/std::max
+        _CRT_SECURE_NO_WARNINGS # Valid: Suppresses MSVC warnings for C-style string functions
+        CRYPTOPP_DISABLE_ASM
+    )
 endif()
+
+# Global definitions required across all platforms
+add_compile_definitions(
+    # Fixes ambiguity between std::byte and CryptoPP::byte in C++17/20/23
+    CRYPTOPP_NO_GLOBAL_BYTE
+)
 
 # =============================================================================
 # 2. Dependencies
@@ -67,9 +79,19 @@ FetchContent_Declare(tomlplusplus
     GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(spdlog boost aws_sigv4 tomlplusplus)
 
-# E. OpenSSL
+FetchContent_Declare(
+    cryptopp-modern
+    GIT_REPOSITORY https://github.com/cryptopp-modern/cryptopp-modern.git
+    GIT_TAG        2026.5.0  # Use a stable tag
+    GIT_SHALLOW    TRUE
+)
+set(BUILD_TESTING OFF CACHE BOOL "Disable tests globally for dependencies" FORCE)
+set(CRYPTOPP_BUILD_TESTING OFF CACHE BOOL "Disable Crypto++ specific tests" FORCE)
+
+FetchContent_MakeAvailable(spdlog boost aws_sigv4 tomlplusplus cryptopp-modern )
+
+# E. OpenSSL (required by awssigv4)
 find_package(OpenSSL REQUIRED)
 
 # F. AWS SigV4 Library Wrapper
@@ -123,12 +145,12 @@ target_link_libraries(hermes_dependencies INTERFACE
     Boost::filesystem
     Boost::uuid
     Boost::atomic
-    OpenSSL::SSL
-    OpenSSL::Crypto
     awssigv4
     tomlplusplus::tomlplusplus
+    cryptopp
+    $<$<PLATFORM_ID:Windows>:bcrypt>
 )
-
+target_include_directories(hermes_dependencies INTERFACE ${cryptopp-modern_SOURCE_DIR}/include)
 # LINK ATOMIC CONDITIONALLY (The Fix)
 if(NOT WIN32)
     # On Linux/macOS, we might need libatomic for 64-bit atomics on some archs
@@ -150,10 +172,10 @@ set(SOURCES_INFRA
     src/infra/audio/Alaw.cpp
     src/infra/io/IoContextPool.cpp
     src/infra/parsers/Json2Graph.cpp
-    src/core/config/Config.cpp
     src/infra/audio/DoubleBuffer.cpp
     src/infra/audio/PitchShifter.cpp
     src/infra/io/AsyncBufferController.cpp
+    src/infra/crypto/EncryptionStrategy.cpp
 )
 
 # Network
@@ -167,17 +189,17 @@ set(SOURCES_NETWORK
     src/network/http/Listener.cpp
     src/network/http/Router.cpp
     src/network/http/Server.cpp
-
 )
 
 # Core
 set(SOURCES_CORE
+    src/core/config/Config.cpp
     src/core/session/ActiveSessions.cpp
     src/core/session/Session.cpp
     src/core/graph/NodeRegistry.cpp
     src/core/graph/Node.cpp
-     src/core/graph/nodes/FileInputNode.cpp
-     src/core/graph/nodes/MixerNode.cpp
+    src/core/graph/nodes/FileInputNode.cpp
+    src/core/graph/nodes/MixerNode.cpp
     src/core/graph/AudioExecutor.cpp
 )
 
@@ -203,6 +225,7 @@ target_include_directories(hermes_engine PUBLIC
     src/infra/audio
     src/infra/io
     src/infra/parsers
+    src/infra/crypto
 )
 
 target_link_libraries(hermes_engine PUBLIC hermes_dependencies)
@@ -212,7 +235,15 @@ target_link_libraries(hermes_engine PUBLIC hermes_dependencies)
 # =============================================================================
 
 add_executable(Server src/app/main.cpp)
+if(WIN32)
+    target_compile_definitions(hermes_engine PRIVATE CRYPTOPP_WIN32_AVAILABLE)
+endif()
 target_link_libraries(Server PRIVATE hermes_engine)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(Server PRIVATE "-Wno-null-dereference")
+    target_compile_options(hermes_engine PRIVATE "-Wno-null-dereference")
+endif()
 
 # =============================================================================
 # 7. Sanitizer Configuration

@@ -2,8 +2,6 @@
 namespace hermes::audio {
 Node::Node(Node* t) : target_(t) {}
 
-IAudioProcessor* Node::as_audio() { return nullptr; }
-
 void Node::set_in_loop(bool val) {
     is_in_loop_ = val;
    };

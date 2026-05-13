@@ -1,3 +1,12 @@
+/**
+ * @file PitchShifter.cpp
+ * @brief Implements pitch shifting using a dual-read-head delay line technique.
+ * 
+ * This pitch shifter uses a circular delay buffer with two read heads offset by 180 degrees.
+ * By modulating the read speed relative to the write speed, the pitch is shifted.
+ * A triangular crossfade is applied between the two read heads to minimize clipping and popping
+ * artifacts that occur when a read head wraps around the buffer.
+ */
 #include "PitchShifter.h"
 
 #include <algorithm>
@@ -83,17 +92,17 @@ PitchShifter::CrossfadeParams PitchShifter::calculate_crossfade_parameters()
 void PitchShifter::process_frame_channels(std::span<int16_t> frame,
                                           const CrossfadeParams& params) {
   for (int c = 0; c < channels_; ++c) {
-    // 1. Write the current input sample to the delay line
+    // Write the current input sample to the delay line
     delay_buffer_[(write_ptr_ * channels_) + c] = static_cast<float>(frame[c]);
 
-    // 2. Read from the two delayed positions using linear interpolation
+    // Read from the two delayed positions using linear interpolation
     float out1 = read_interpolated(params.delay1, c);
     float out2 = read_interpolated(params.delay2, c);
 
-    // 3. Apply the triangular crossfade to mix them
+    // Apply the triangular crossfade to mix them
     float mixed_out = (out1 * params.weight1) + (out2 * params.weight2);
 
-    // 4. Clamp to prevent integer overflow clipping
+    // Clamp to prevent integer overflow clipping
     frame[c] = static_cast<int16_t>(
         std::clamp(static_cast<int>(mixed_out),
                    static_cast<int>(std::numeric_limits<int16_t>::min()),

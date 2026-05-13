@@ -4,6 +4,7 @@
 #include <expected>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "Config.hpp"
 #include "Node.hpp"
@@ -28,15 +29,20 @@ struct FileOptionsNode : Node {
 // =========================================================
 // ClientsNode: Registry of streaming targets
 // =========================================================
+struct ClientConfig {
+  std::string ip;
+  uint16_t port;
+  double packet_loss_ratio = 0.0;  // 0.0 עד 1.0
+};
 struct ClientsNode : Node {
-  std::unordered_map<std::string, uint16_t> clients;
+  std::vector<ClientConfig> clients;
 
   explicit ClientsNode(Node* t = nullptr) : Node(t) {
     kind_ = NodeKind::Clients;
   }
 
-  void add_client(std::string ip, uint16_t port) {
-    clients.emplace(std::move(ip), port);
+  void add_client(std::string ip, uint16_t port, double packet_loss_ratio) {
+    clients.push_back({std::move(ip), port, packet_loss_ratio});
   }
 
   void set_in_loop(bool val) override { is_in_loop_ = val; };
@@ -53,7 +59,7 @@ struct ClientsNode : Node {
 // =========================================================
 // DelayNode: Inserts silence based on configuration
 // =========================================================
-struct DelayNode : Node, IAudioProcessor {
+struct DelayNode : Node {
   float delay_ms_{0.0F};
 
   explicit DelayNode(Node* t = nullptr) : Node(t) { kind_ = NodeKind::Delay; }
@@ -65,7 +71,6 @@ struct DelayNode : Node, IAudioProcessor {
     total_frames_ = static_cast<int>(delay_ms_ / config::FRAME_DURATION);
   }
 
-  IAudioProcessor* as_audio() override { return this; }
   void set_in_loop(bool val) override { is_in_loop_ = val; };
   std::expected<void, config::NodeError> process_frame(
       std::span<uint8_t> frame_buffer) override {

@@ -1,11 +1,14 @@
 #pragma once
 #include <boost/core/span.hpp>
 #include <cstdint>
-
+#include "EncryptionStrategy.hpp"
 /**
  * @brief RFC 3550 RTP packetizer. Manages sequence numbers and timestamps.
  */
 namespace hermes::net::rtp {
+
+
+
 class RTPPacketizer {
  public:
   /**
@@ -20,18 +23,23 @@ class RTPPacketizer {
    * @warning 'out_buffer' must be at least 12 bytes larger than 'payload'.
    */
   size_t packetize(boost::span<uint8_t> payload,
-                   boost::span<uint8_t> out_buffer);
+                                boost::span<uint8_t> out_buffer,
+                                crypto::IEncryptionStrategy* ency);
+
+  void encrypt();
 
   /** @brief Advances the internal timestamp by the increment value. */
   void update_timestamp();
 
   /** @brief Returns the current RTP timestamp. */
   uint32_t current_timestamp() const;
+  uint32_t current_ssrc() const;
 
  private:
   uint8_t payload_type_;
   uint32_t ssrc_;
   uint16_t sequence_num_ = 0;
+  uint32_t roc_ = 0;
   uint32_t timestamp_ = 0;
   uint32_t timestamp_increment_;
 

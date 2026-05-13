@@ -17,19 +17,19 @@ namespace hermes::audio {
 
 MixerNode::MixerNode(Node* t) : Node(t) { kind_ = NodeKind::Mixer; }
 
-IAudioProcessor* MixerNode::as_audio() { return this; }
+// Removed as_audio
 
 void MixerNode::set_max_frames() {
   int max = 0;
-  for (auto& source : inputs_) {
-    max = std::max(max, source.node->get_total_frames());
+  for (auto* source : inputs_) {
+    max = std::max(max, source->get_total_frames());
   }
   total_frames_ = max;
   spdlog::info("Mixer total frames set to: {}", max);
 }
 
 void MixerNode::add_input(FileInputNode* node) {
-  inputs_.push_back({node, node});
+  inputs_.push_back(node);
 }
 
 std::expected<void, NodeError> MixerNode::connect_input(Node* source) {
@@ -55,8 +55,7 @@ std::expected<void, NodeError> MixerNode::connect_input(Node* source) {
   // node can be that since delay cant be mixed but can still be connected do
   // delay for garph traversal
   if (source->kind() == NodeKind::FileInput) {
-    auto* input = dynamic_cast<FileInputNode*>(source);
-    inputs_.push_back({input, input});
+    inputs_.push_back(source);
   }
 
   wire_standard(source);
@@ -66,14 +65,14 @@ std::expected<void, NodeError> MixerNode::connect_input(Node* source) {
 
 void MixerNode::set_in_loop(bool val){
   is_in_loop_ =val;
-  for(auto& input:inputs_){
-    input.node->set_in_loop(val);
+  for(auto* input:inputs_){
+    input->set_in_loop(val);
   }
 }
 
 std::expected<void, NodeError> MixerNode::close() {
-  for (auto& source : inputs_) {
-    auto result = source.audio->close();
+  for (auto* source : inputs_) {
+    auto result = source->close();
     if (!result) {
       return std::unexpected<NodeError>(result.error());
     }
@@ -88,8 +87,8 @@ std::expected<void, NodeError> MixerNode::process_frame(
   accumulator_.fill(0);
   bool has_active_inputs = false;
 
-  for (auto& source : inputs_) {
-    auto result = source.audio->process_frame(temp_input_buffer_);
+  for (auto* source : inputs_) {
+    auto result = source->process_frame(temp_input_buffer_);
     if (!result) {
       // Handle non-critical errors (Underrun, EOS) by skipping
       if (result.error().code == NodeErrorCode::Critical)

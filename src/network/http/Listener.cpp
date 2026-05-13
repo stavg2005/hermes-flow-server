@@ -6,7 +6,6 @@
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/beast.hpp>
 #include <expected>
-#include <iostream>
 
 #include "HttpSession.hpp"
 #include "IoContextPool.hpp"
@@ -114,6 +113,7 @@ asio::awaitable<std::expected<void, ErrorInfo>> Listener::do_accept() {
 
       http->run();
     }
+    co_return std::expected<void, ErrorInfo>{};
   } catch (const std::exception& e) {
     spdlog::error("[Listener] Uncaught exception: {}", e.what());
     co_return std::unexpected(ErrorInfo::From(

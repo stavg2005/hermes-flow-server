@@ -44,6 +44,48 @@ std::expected<uint16_t, ErrorInfo> parse_port(const json::value& json_port,
       ErrorInfo::From(AppError::ParseError, "Port must be int or string"));
 }
 
+// פונקציית עזר חדשה להמרה בטוחה של אחוז האובדן
+std::expected<double, ErrorInfo> parse_loss_ratio(const json::value& json_loss,
+                                                  const std::string& ip) {
+  double loss_val = 0.0;
+
+  if (json_loss.is_double()) {
+    loss_val = json_loss.as_double();
+  } else if (json_loss.is_int64()) {
+    loss_val = static_cast<double>(json_loss.as_int64());
+  } else if (json_loss.is_uint64()) {
+    loss_val = static_cast<double>(json_loss.as_uint64());
+  }
+
+  else if (json_loss.is_string()) {
+    std::string_view l_str = json_loss.as_string();
+    auto [ptr, ec] =
+        std::from_chars(l_str.data(), l_str.data() + l_str.size(), loss_val);
+
+    if (ec != std::errc()) {
+      spdlog::error("Invalid lossRatio format for client IP {}: {}", ip, l_str);
+      return std::unexpected(
+          ErrorInfo::From(AppError::ParseError,
+                          "Invalid lossRatio format: " + std::string(l_str)));
+    }
+  }
+
+  else {
+    return std::unexpected(ErrorInfo::From(
+        AppError::ParseError, "lossRatio must be a number or string"));
+  }
+
+  if (loss_val < 0.0 || loss_val > 1.0) {
+    spdlog::error("lossRatio for client {} is out of bounds (0.0 to 1.0): {}",
+                  ip, loss_val);
+    return std::unexpected(
+        ErrorInfo::From(AppError::ParseError,
+                        "lossRatio must be strictly between 0.0 and 1.0"));
+  }
+
+  return loss_val;
+}
+
 std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_input(
     boost::asio::io_context& io, const json::object& data) {
   auto name_res = require_json<std::string>(data, "fileName");
@@ -51,8 +93,6 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_input(
 
   std::string name = *name_res;
   std::string path = std::string(DOWNLOADS_DIR) + name;
-
-  // TODO: Add path traversal check here if needed (AppError::FileSystemError)
 
   return std::make_unique<FileInputNode>(io, name, path);
 }
@@ -72,7 +112,6 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> create_delay(
         }
         return delay_sec;
       })
-
       .transform([](float delay_sec) {
         return std::make_unique<DelayNode>(delay_sec);
       });
@@ -83,10 +122,11 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> create_file_options(
   auto node = std::make_unique<FileOptionsNode>();
 
   auto gain_res = require_json<double>(data, "gain");
-
   if (!gain_res) return std::unexpected(gain_res.error());
+
   auto pitch_shift_res = require_json<double>(data, "pitch_shift");
   if (!pitch_shift_res) return std::unexpected(pitch_shift_res.error());
+
   node->gain = *gain_res;
   node->pitch_shift = *pitch_shift_res;
   return node;
@@ -115,7 +155,18 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> create_clients(
       auto port_res = parse_port(client_ojson.at("port"), ip);
       if (!port_res) return std::unexpected(port_res.error());
 
-      node->add_client(ip, *port_res);
+      double loss_ratio = 0.0;
+      if (client_ojson.contains("lossRatio")) {
+        auto loss_res = parse_loss_ratio(client_ojson.at("lossRatio"), ip);
+
+        if (!loss_res) {
+          return std::unexpected(loss_res.error());
+        }
+
+        loss_ratio = *loss_res;
+      }
+
+      node->add_client(ip, *port_res, loss_ratio);
     }
   }
   return node;
@@ -127,7 +178,6 @@ std::expected<std::shared_ptr<Node>, ErrorInfo> create_clients(
 void register_builtin_nodes() {
   auto& factory = NodeFactory::instance();
 
-  // Map string keys (from JSON) to C++ creation functions
   factory.register_creator("fileInput", create_file_input);
   factory.register_creator("mixer", create_mixer);
   factory.register_creator("delay", create_delay);

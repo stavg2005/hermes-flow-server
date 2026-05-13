@@ -56,7 +56,8 @@ asio::awaitable<void> HttpSession::do_session() {
     for (;;) {
       // Reset state
       parser_.emplace();
-      parser_->body_limit(1024 * 1024 * 10);  // 10MB limit
+      constexpr uint64_t MAX_BODY_LIMIT = 10ULL * 1024ULL * 1024ULL; // 10MB
+      parser_->body_limit(MAX_BODY_LIMIT);
       stream_.expires_after(std::chrono::seconds(SESSION_TIMEOUT_SECONDS));
 
       //reads results into parser
@@ -70,15 +71,12 @@ asio::awaitable<void> HttpSession::do_session() {
 
       const auto& req = parser_->get();
 
-      // Check if we need to hand off the socket to the WebSocket Session
-
       if (handle_websocket_upgrade(req)) {
         co_return;  // End HTTP lifecycle, socket ownership moved
       }
 
       bool keep_alive = *read_result;
 
-      // Process standard HTTP request
       if (!co_await process_single_request(keep_alive)) {
         break;  // Exit loop if write failed or keep_alive is false
       }
@@ -94,7 +92,7 @@ asio::awaitable<void> HttpSession::handle_bad_request(
   beast::http::response<beast::http::string_body> err_res;
   ResponseBuilder::build_error_response(err_res, error_msg, version, false,
                                         beast::http::status::bad_request);
-  co_await do_write_response(err_res);
+  (void)co_await do_write_response(err_res);
 }
 
 bool HttpSession::handle_websocket_upgrade(
@@ -123,7 +121,7 @@ asio::awaitable<bool> HttpSession::process_single_request(bool keep_alive) {
   }
 
   if (!keep_alive) {
-    co_await do_graceful_close();
+    (void)co_await do_graceful_close();
     co_return false;
   }
 
@@ -166,9 +164,9 @@ asio::awaitable<std::expected<void, ErrorInfo>> HttpSession::do_write_response(
 
   // Optimization: Disable Nagle
   beast::error_code ec;
-  stream_.socket().set_option(
+  stream_.socket().set_option(// NOLINT(bugprone-unused-return-value)
       tcp::no_delay(true),
-      ec);  // Ignore error here, it's optional optimization
+      ec);
 
   co_await beast::http::async_write(
       stream_, res, asio::redirect_error(asio::use_awaitable, ec));
@@ -184,7 +182,7 @@ asio::awaitable<std::expected<void, ErrorInfo>> HttpSession::do_write_response(
 asio::awaitable<std::expected<void, ErrorInfo>>
 HttpSession::do_graceful_close() {
   beast::error_code ec;
-  stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
+  stream_.socket().shutdown(tcp::socket::shutdown_send, ec);  // NOLINT(bugprone-unused-return-value)
 
   if (ec && ec != beast::errc::not_connected) {
     // This is technically an error, but we are closing anyway.
@@ -203,11 +201,11 @@ HttpSession::do_graceful_close() {
     co_await stream_.async_read_some(
         drain.prepare(DRAIN_BUFFER_SIZE),
         asio::redirect_error(asio::use_awaitable, drain_ec));
-  } catch (...) {
-    // Ignore timeouts or resets during drain
+  } catch (const std::exception& e) {
+    spdlog::trace("[HttpSession] Ignored exception during drain: {}", e.what());
   }
 
-  stream_.socket().close(ec);
+  stream_.socket().close(ec);  // NOLINT(bugprone-unused-return-value)
   co_return std::expected<void, ErrorInfo>{};
 }
 

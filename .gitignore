@@ -33,8 +33,7 @@ Thumbs.db         # Windows
 *.so
 *.dll
 *.dylib
-*.clang-format
-*.toml
+
 # ───────────── Logs ─────────────
 *.log
 .cache/

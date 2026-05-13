@@ -19,7 +19,7 @@ namespace hermes::audio {
  * @brief Specific implementation for Disk Files.
  * Inherits buffering magic from AsyncBufferController via composition.
  */
-struct FileInputNode : public Node, public IAudioProcessor, public IAsyncInitializer {
+struct FileInputNode : public Node {
   // --- File Specific Members ---
   std::string file_name_;
   std::string file_path_;
@@ -27,9 +27,6 @@ struct FileInputNode : public Node, public IAudioProcessor, public IAsyncInitial
   FileOptionsNode* options_ = nullptr;
   PitchShifter pitch_shifter_;
 
-
-  // WAV Header Parsing State
-  bool is_first_read_ = true;
 
   // Frame Tracking 
   int total_frames_ = 0;
@@ -73,10 +70,9 @@ struct FileInputNode : public Node, public IAudioProcessor, public IAsyncInitial
    */
   void set_options(FileOptionsNode* options_node);
 
-  // --- IAudioProcessor / IAsyncInitializer Implementations ---
+  // --- Node Overrides ---
   boost::asio::awaitable<void> initialize_buffers() override;
   std::expected<void, config::NodeError> process_frame(std::span<uint8_t> buffer) override;
-  IAudioProcessor* as_audio() override { return this; }
 
  private:
   boost::asio::io_context& io_;

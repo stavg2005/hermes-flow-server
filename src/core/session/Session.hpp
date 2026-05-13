@@ -39,9 +39,10 @@ class Session : public std::enable_shared_from_this<Session> {
    * @param g The audio graph to execute (moved into the session).
    */
   Session(boost::asio::io_context& io, std::string id, Graph&& g,
-          config::S3Config s3_config, bool is_web_rtc = false,
+          const config::S3Config& s3_config, bool is_web_rtc = false,
           std::string janus_ip = "",
-          std::optional<uint16_t> janus_port = std::nullopt);
+          std::optional<uint16_t> janus_port = std::nullopt,
+          bool is_encrypted = false);
 
   /**
    * @brief Destructor.
@@ -68,7 +69,6 @@ class Session : public std::enable_shared_from_this<Session> {
   void pause();
 
   void resume();
-
 
   std::optional<uint16_t> get_webrtc_port() const { return janus_port_; }
   uint64_t get_rtp_bytes_sent() const;
@@ -111,6 +111,9 @@ class Session : public std::enable_shared_from_this<Session> {
   asio::steady_timer timer_;
   std::unique_ptr<ISessionObserver> observer_;
 
+
+
+
   /**
    * @brief Scans the graph for 'ClientsNode' and registers them with the
    * RTPStreamer.
@@ -129,7 +132,7 @@ class Session : public std::enable_shared_from_this<Session> {
    * @brief Evaluates the status returned by the AudioExecutor after a frame.
    * @return true if the session should continue, false on critical error.
    */
-  bool is_status_ok(config::NodeErrorCode status);
+  bool is_status_ok(config::NodeErrorCode code);
 
   /**
    * @brief Sends updated statistics to the observer if interval has elapsed.

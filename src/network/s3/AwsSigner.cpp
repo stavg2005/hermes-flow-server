@@ -1,9 +1,7 @@
 #include "AwsSigner.hpp"
 
 #include <ctime>
-#include <iomanip>
 #include <map>
-#include <sstream>
 #include <vector>
 
 #include "awssigv4.h"
@@ -23,12 +21,11 @@ std::tm AwsSigner::get_safe_gmtime(std::time_t timer) {
 
 SignedRequestHeaders AwsSigner::sign(const config::S3Config& cfg,
                                      boost::beast::http::verb method,
-                                     const std::string& host,
+                                     const std::string& host, // NOLINT(bugprone-easily-swappable-parameters)
                                      const std::string& uri_path) {
   std::time_t now = std::time(nullptr);
   std::tm timeinfo = get_safe_gmtime(now);
 
-  // 1. Initialize the low-level signer
   aws_sigv4::Signature signer(cfg.service, host, cfg.region, cfg.secret_key,
                               cfg.access_key, now);
 
@@ -36,8 +33,8 @@ SignedRequestHeaders AwsSigner::sign(const config::S3Config& cfg,
   std::string payload_hash =
       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-  // Format AWS Date
-  char amzdate[20];
+  constexpr size_t AWS_DATE_BUFFER_SIZE = 20;
+  char amzdate[AWS_DATE_BUFFER_SIZE];
   std::strftime(amzdate, sizeof(amzdate), "%Y%m%dT%H%M%SZ", &timeinfo);
 
   // create Headers Map for Canonicalization

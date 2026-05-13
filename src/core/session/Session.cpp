@@ -1,5 +1,6 @@
 #include "Session.hpp"
 
+#include <cryptopp/osrng.h>
 #include <spdlog/spdlog.h>
 
 #include <array>
@@ -20,8 +21,9 @@ using namespace hermes::config;
 namespace hermes::service {
 
 Session::Session(asio::io_context& io, std::string id, Graph&& g,
-                 config::S3Config s3_config, bool is_web_rtc,
-                 std::string janus_ip, std::optional<uint16_t> janus_port)
+                 const config::S3Config& s3_config, bool is_web_rtc,
+                 std::string janus_ip, std::optional<uint16_t> janus_port,
+                 bool is_encrypted)
     : io_(io),
       id_(std::move(id)),
       resume_channel_(io_, 1),
@@ -32,6 +34,9 @@ Session::Session(asio::io_context& io, std::string id, Graph&& g,
       is_webrtc_(is_web_rtc) {
   audio_executor_ = std::make_unique<AudioExecutor>(io_, *graph_, s3_config);
   streamer_ = std::make_unique<RTPStreamer>(io_);
+  if (is_encrypted) {
+    streamer_->setup_security();
+  }
   spdlog::debug("Session [{}] created.", id_);
 }
 
@@ -67,7 +72,6 @@ void Session::resume() {
   }
 }
 
-
 // TODO save the clients node in a data memeber in graph when parsing the graph
 void Session::configure_streamer_from_graph() {
   if (is_webrtc_) {
@@ -81,16 +85,12 @@ void Session::configure_streamer_from_graph() {
       spdlog::error("[{}] WebRTC Session started without an allocated port!",
                     id_);
     }
-  } else {
-    for (const auto& node : graph_->nodes) {
-      if (node->kind() == NodeKind::Clients) {
-        auto* clientsNode = static_cast<ClientsNode*>(node.get());
-
-        for (const auto& [ip, port] : clientsNode->clients) {
-          spdlog::info("[{}] Auto-registering client: {}:{}", id_, ip, port);
-          streamer_->add_client(ip, port);
-        }
-      }
+  } else if (graph_->clients_node != nullptr) {
+    for (const auto& client_config : graph_->clients_node->clients) {
+      spdlog::info("[{}] Auto-registering client: {}:{}", id_,
+                   client_config.ip, client_config.port);
+      streamer_->add_client(client_config.ip, client_config.port,
+                            client_config.packet_loss_ratio);
     }
   }
 }
@@ -193,7 +193,7 @@ std::expected<void, config::NodeError> Session::process_and_stream_single_frame(
   auto [executor_wants_continue, status] =
       audio_executor_->get_next_frame(pcm_buffer);
 
-  // 1. Process Telemetry and Diagnostics
+  // Process Telemetry and Diagnostics
   if (status.code != config::NodeErrorCode::Success) {
     if (status.code == config::NodeErrorCode::Underrun) {
       spdlog::warn("[{}] Audio underrun detected: {}", id_, status.message);
@@ -202,13 +202,13 @@ std::expected<void, config::NodeError> Session::process_and_stream_single_frame(
     }
   }
 
-  // 2. Process Control Flow
+  // Process Control Flow
   if (!executor_wants_continue) {
     spdlog::info("[{}] Executor reached natural finish or fatal error.", id_);
     return std::unexpected(status);  // Pass the EXACT status up the chain
   }
 
-  // 3. Dispatch the Audio
+  // Dispatch the Audio
   streamer_->send_frame(pcm_buffer);
   audio_executor_->get_stats().packets_sent++;
 
@@ -232,7 +232,9 @@ asio::awaitable<bool> Session::initialize_graph_execution() {
 }
 
 bool Session::is_status_ok(NodeErrorCode code) {
-  if (code == NodeErrorCode::Success) return true;
+  if (code == NodeErrorCode::Success) {
+    return true;
+  }
 
   // Warnings / Info (Non-breaking)
   if (code == NodeErrorCode::Underrun) {
@@ -254,7 +256,9 @@ bool Session::is_status_ok(NodeErrorCode code) {
 }
 
 void Session::finalize_session(const NodeError& result) {
-  if (!observer_) return;
+  if (!observer_) {
+    return;
+  }
 
   if (result.code != NodeErrorCode::Success) {
     spdlog::error("[{}] Session ended with error: {}", id_, result.message);
@@ -272,7 +276,8 @@ void Session::update_stats_if_needed(
   }
 
   auto now = std::chrono::steady_clock::now();
-  if (now - last_stats_time > std::chrono::milliseconds(100)) {
+  constexpr auto STATS_UPDATE_INTERVAL_MS = std::chrono::milliseconds(100);
+  if (now - last_stats_time > STATS_UPDATE_INTERVAL_MS) {
     observer_->on_stats_update(audio_executor_->get_stats());
     last_stats_time = now;
   }

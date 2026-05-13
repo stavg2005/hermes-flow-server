@@ -5,6 +5,7 @@
 #include <string>
 
 #include "NodeFactory.hpp"
+#include "Nodes.hpp"
 #include "Types.hpp"
 #include "JsonUtils.hpp"
 #include "spdlog/spdlog.h"
@@ -40,6 +41,18 @@ std::expected<void, config::ErrorInfo> parse_nodes(boost::asio::io_context& io,
 
     node->set_id(*id);
     graph.node_map[*id] = node.get();
+
+    if (node->kind() == audio::NodeKind::FileInput) {
+      graph.file_nodes.push_back(static_cast<audio::FileInputNode*>(node.get()));
+    } else if (node->kind() == audio::NodeKind::Mixer) {
+      graph.mixer_nodes.push_back(static_cast<audio::MixerNode*>(node.get()));
+    } else if (node->kind() == audio::NodeKind::Clients) {
+      if (graph.clients_node != nullptr) {
+        return std::unexpected(ErrorInfo::From(AppError::ParseError, "Multiple Clients nodes are not supported"));
+      }
+      graph.clients_node = static_cast<audio::ClientsNode*>(node.get());
+    }
+
     graph.nodes.push_back(std::move(node));
   }
   return {};
@@ -112,23 +125,29 @@ std::expected<audio::Graph, config::ErrorInfo> parse_graph(
     boost::asio::io_context& io, const json::object& o) {
   audio::Graph graph{};
 
-  return require_json<json::object>(o, "flow")
-      .and_then(
-          [&](const json::object& flow) -> std::expected<void, ErrorInfo> {
-            return require_json<json::array>(flow, "nodes")
-                .and_then([&](const json::array& nodes) {
-                  return parse_nodes(io, nodes, graph);
-                })
+  auto flow_res = require_json<json::object>(o, "flow");
+  if (!flow_res) return std::unexpected(flow_res.error());
 
-                .and_then([&] { return set_start_node(flow, graph); })
+  const json::object& flow = *flow_res;
 
-                .and_then(
-                    [&] { return require_json<json::array>(flow, "edges"); })
-                .and_then([&](const json::array& edges) {
-                  return parse_edges(edges, graph);
-                });
-          })
+  auto nodes_res = require_json<json::array>(flow, "nodes");
+  if (!nodes_res) return std::unexpected(nodes_res.error());
 
-      .transform([&] { return std::move(graph); });
+  if (auto err = parse_nodes(io, *nodes_res, graph); !err) {
+    return std::unexpected(err.error());
+  }
+
+  if (auto err = set_start_node(flow, graph); !err) {
+    return std::unexpected(err.error());
+  }
+
+  auto edges_res = require_json<json::array>(flow, "edges");
+  if (!edges_res) return std::unexpected(edges_res.error());
+
+  if (auto err = parse_edges(*edges_res, graph); !err) {
+    return std::unexpected(err.error());
+  }
+
+  return std::move(graph);
 }
 }  // namespace hermes::infra

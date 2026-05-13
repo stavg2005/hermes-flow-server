@@ -5,7 +5,6 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <memory>
-#include <stdexcept>
 
 #include "Config.hpp"
 #include "Json2Graph.hpp"
@@ -31,7 +30,7 @@ std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
 
   boost::asio::io_context& io = pool_.get_io_context();  //
 
-  // Step 1: Parse the Graph
+  // Parse the Graph
   auto graph_result =
       parse_graph(io, jobj).transform_error([&](const auto& err) {
         spdlog::error("Graph parsing failed for {}: {}", session_id,
@@ -39,9 +38,11 @@ std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
         return err;
       });  //
 
-  if (!graph_result) return std::unexpected(graph_result.error());
+  if (!graph_result) {
+    return std::unexpected(graph_result.error());
+  }
 
-  // Step 2: Handle WebRTC Resource Allocation
+  // Handle WebRTC Resource Allocation
   std::optional<uint16_t> allocated_port = std::nullopt;
   if (session_type == SessionType::WebRTC) {
     allocated_port = allocate_webrtc_port();
@@ -51,23 +52,37 @@ std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
     }
   }
 
-  // Step 3: Instantiate and Register
-  auto session =
-      std::make_shared<Session>(io, session_id, std::move(*graph_result),
-                                cfg_.s3, (session_type == SessionType::WebRTC),
-                                cfg_.janus.address, allocated_port);  //
+  // RAII guard to prevent port leak
+  struct PortGuard {
+    ActiveSessions* self;
+    std::optional<uint16_t> port;
+    bool released = false;
+    ~PortGuard() {
+      if (!released && port) {
+        std::lock_guard<std::mutex> lock(self->mutex_);
+        self->available_webrtc_ports_.push(*port);
+      }
+    }
+  } port_guard{this, allocated_port};
+
+  // Instantiate and Register
+  auto session = std::make_shared<Session>(
+      io, session_id, std::move(*graph_result), cfg_.s3,
+      (session_type == SessionType::WebRTC), cfg_.janus.address, allocated_port,
+      (session_type == SessionType::StandartEncrypted));  //
 
   {
     std::lock_guard<std::mutex> lock(mutex_);  //
     sessions_[session_id] = std::move(session);
   }
 
+  port_guard.released = true;
   return session_id;
 }
 
 std::expected<void, ErrorInfo> ActiveSessions::create_and_run_websocket_session(
     const std::string& audio_session_id, const req_t& req,
-    boost::beast::tcp_stream& stream) {  // 1. Validate Session Existence
+    boost::beast::tcp_stream& stream) {
   std::shared_ptr<Session> session =
       get(audio_session_id);  // Using existing get()
   if (!session) {

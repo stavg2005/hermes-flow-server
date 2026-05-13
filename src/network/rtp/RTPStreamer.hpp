@@ -1,4 +1,7 @@
 #pragma once
+#include <cryptopp/hkdf.h>
+#include <cryptopp/sha.h>
+
 #include <algorithm>
 #include <boost/asio.hpp>
 #include <memory>
@@ -11,12 +14,20 @@
 #include "Packet.hpp"
 #include "PacketUtils.hpp"
 #include "RTPPacketizer.hpp"
-#include "Types.hpp"
+#include "EncryptionStrategy.hpp"
 #include "spdlog/spdlog.h"
 
 namespace hermes::net::rtp {
 namespace asio = boost::asio;
 using udp = asio::ip::udp;
+
+struct RtpClientTarget {
+  udp::endpoint endpoint;
+  double packet_loss_ratio;
+
+  // מאפשר ל-std::ranges::contains להמשיך לעבוד עם השוואה ל-endpoint
+  bool operator==(const udp::endpoint& ep) const { return endpoint == ep; }
+};
 class RTPStreamer {
  public:
   explicit RTPStreamer(boost::asio::io_context& io)
@@ -28,13 +39,13 @@ class RTPStreamer {
         codec_->get_timestamp_increment(config::FRAME_SIZE_BYTES));
 
     for (int i = 0; i < RING_BUFFER_SIZE; ++i) {
-
       packet_ring_[i] = std::make_shared<std::vector<uint8_t>>(
           RTP_HEADER_SIZE + config::FRAME_SIZE_BYTES);
     }
   }
 
-  void add_client(const std::string& host_or_ip, uint16_t port) {
+  void add_client(const std::string& host_or_ip, uint16_t port,
+                  double packet_loss_ratio = 0.0) {
     boost::system::error_code ec;
     auto addr = boost::asio::ip::make_address(host_or_ip, ec);
     udp::endpoint ep;
@@ -43,17 +54,23 @@ class RTPStreamer {
       ep = udp::endpoint(addr, port);
     } else {
       asio::ip::udp::resolver resolver(socket_.get_executor());
-      auto results = resolver.resolve(asio::ip::udp::v4(), host_or_ip, std::to_string(port), ec);
+      auto results = resolver.resolve(asio::ip::udp::v4(), host_or_ip,
+                                      std::to_string(port), ec);
       if (ec || results.empty()) {
-        spdlog::error("Invalid IP or Hostname: {} - {}", host_or_ip, ec.message());
+        spdlog::error("Invalid IP or Hostname: {} - {}", host_or_ip,
+                      ec.message());
         return;
       }
       ep = *results.begin();
     }
 
-    if (!std::ranges::contains(clients_, ep)) {
-      clients_.push_back(ep);
-      spdlog::info("RTP Client added: {}:{}", ep.address().to_string(), port);
+    if (std::find_if(clients_.begin(), clients_.end(),
+                     [&ep](const RtpClientTarget& client) {
+                       return client.endpoint == ep;
+                     }) == clients_.end()) {
+      clients_.push_back({ep, packet_loss_ratio});
+      spdlog::info("RTP Client added: {}:{} (Loss: {}%)",
+                   ep.address().to_string(), port, packet_loss_ratio * 100.0);
     }
   }
 
@@ -67,40 +84,110 @@ class RTPStreamer {
         ep = udp::endpoint(addr, port);
       } else {
         asio::ip::udp::resolver resolver(socket_.get_executor());
-        auto results = resolver.resolve(asio::ip::udp::v4(), host_or_ip, std::to_string(port), ec);
-        if (ec || results.empty()) return;
+        auto results = resolver.resolve(asio::ip::udp::v4(), host_or_ip,
+                                        std::to_string(port), ec);
+        if (ec || results.empty()) {
+          return;
+        }
         ep = *results.begin();
       }
 
       std::erase(clients_, ep);
       spdlog::info("RTP Client removed: {}:{}", ep.address().to_string(), port);
-    } catch (...) {
+    } catch (const std::exception& e) {
+      spdlog::trace("Ignored exception during client removal: {}", e.what());
     }
+  }
+
+  static std::vector<uint8_t> derive_iv_from_ssrc(uint32_t ssrc) {
+    std::vector<uint8_t> iv = hermes::config::STATIC_SALT;
+
+    constexpr int SHIFT_24 = 24;
+    constexpr int SHIFT_16 = 16;
+    constexpr int SHIFT_8 = 8;
+    constexpr uint32_t BYTE_MASK = 0xFF;
+
+    // XOR the first 4 bytes of the Salt with the random SSRC
+    // This makes the Base IV completely unique for every session
+    iv[0] ^= (ssrc >> SHIFT_24) & BYTE_MASK;
+    iv[1] ^= (ssrc >> SHIFT_16) & BYTE_MASK;
+    iv[2] ^= (ssrc >> SHIFT_8) & BYTE_MASK;
+    iv[3] ^= ssrc & BYTE_MASK;
+
+    return iv;
+  }
+
+  static std::vector<uint8_t> derive_session_key(uint32_t ssrc) {
+    const auto& master_key = hermes::config::STATIC_MASTER_KEY;
+    constexpr size_t AES_KEY_SIZE = 16;
+    std::vector<uint8_t> session_key(AES_KEY_SIZE);  // We need a 128-bit key for AES
+
+    constexpr int SHIFT_24 = 24;
+    constexpr int SHIFT_16 = 16;
+    constexpr int SHIFT_8 = 8;
+    constexpr uint32_t BYTE_MASK = 0xFF;
+
+    // Convert the 32-bit SSRC into a byte array
+    uint8_t ssrc_bytes[4] = {static_cast<uint8_t>((ssrc >> SHIFT_24) & BYTE_MASK),
+                             static_cast<uint8_t>((ssrc >> SHIFT_16) & BYTE_MASK),
+                             static_cast<uint8_t>((ssrc >> SHIFT_8) & BYTE_MASK),
+                             static_cast<uint8_t>(ssrc & BYTE_MASK)};
+
+    // Use HKDF with SHA-256 to securely generate the new key
+    CryptoPP::HKDF<CryptoPP::SHA256> hkdf;
+    hkdf.DeriveKey(session_key.data(), session_key.size(),  // The output buffer
+                   master_key.data(),
+                   master_key.size(),  // The Secret (Master Key)
+                   ssrc_bytes, 4,  // The Salt (We use SSRC to make it unique)
+                   nullptr, 0      // Info (Optional context, leave empty)
+    );
+
+    return session_key;
+  }
+  void setup_security() {
+    const auto& ssrc = packetizer_->current_ssrc();
+    spdlog::debug("SSRC is {}", ssrc);
+    encryptor_ = crypto::create_aes_encryption_strategy(
+        derive_session_key(ssrc), derive_iv_from_ssrc(ssrc));
+    encryption_enabled_ = true;
+    spdlog::info("RTP Security Layer initialized successfully");
   }
 
   // Zero-copy fan-out.
   // Uses callbacks for parallel dispatch (cheaper than coroutines).
   void send_frame(std::span<const uint8_t> pcm_frame) {
-    if (clients_.empty()) return;
+    if (clients_.empty()) {
+      return;
+    }
 
     auto packet_owner = packet_ring_[ring_index_];
-
     ring_index_ = (ring_index_ + 1) % RING_BUFFER_SIZE;
-
     std::span<uint8_t> packet_span(*packet_owner);
 
-    size_t packet_size =
-        packet_to_rtp(pcm_frame, *packetizer_, *codec_, packet_span);
+    size_t packet_size = packet_to_rtp(pcm_frame, *packetizer_, *codec_,
+                                       encryptor_.get(), packet_span);
+    if (packet_size == 0) {
+      return;
+    }
 
-    if (packet_size == 0) return;
+    static thread_local std::mt19937 gen(std::random_device{}());
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
 
-    for (const auto& endpoint : clients_) {
+    for (const auto& client : clients_) {
+      if (client.packet_loss_ratio > 0.0) {
+        if (dist(gen) < client.packet_loss_ratio) {
+          continue;
+        }
+      }
+
       socket_.async_send_to(
-          asio::buffer(*packet_owner, packet_size), endpoint,
-          [this, packet_owner](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+          asio::buffer(*packet_owner, packet_size), client.endpoint,
+          [this, packet_owner](const boost::system::error_code& ec,
+                               std::size_t bytes_transferred) {
             if (!ec) {
-               bytes_sent_.fetch_add(bytes_transferred, std::memory_order_relaxed);
-               packets_sent_.fetch_add(1, std::memory_order_relaxed);
+              bytes_sent_.fetch_add(bytes_transferred,
+                                    std::memory_order_relaxed);
+              packets_sent_.fetch_add(1, std::memory_order_relaxed);
             } else {
               spdlog::debug("UDP send failed: {}", ec.message());
             }
@@ -108,8 +195,12 @@ class RTPStreamer {
     }
   }
 
-  uint64_t get_bytes_sent() const { return bytes_sent_.load(std::memory_order_relaxed); }
-  uint64_t get_packets_sent() const { return packets_sent_.load(std::memory_order_relaxed); }
+  uint64_t get_bytes_sent() const {
+    return bytes_sent_.load(std::memory_order_relaxed);
+  }
+  uint64_t get_packets_sent() const {
+    return packets_sent_.load(std::memory_order_relaxed);
+  }
 
  private:
   std::atomic<uint64_t> bytes_sent_{0};
@@ -120,8 +211,10 @@ class RTPStreamer {
   size_t ring_index_ = 0;
   std::unique_ptr<RTPPacketizer> packetizer_;
   std::unique_ptr<audio::ICodecStrategy> codec_;
-
+  std::unique_ptr<crypto::IEncryptionStrategy> encryptor_;
   udp::socket socket_;
-  std::vector<udp::endpoint> clients_;
+  std::vector<RtpClientTarget> clients_;
+
+  bool encryption_enabled_ = false;
 };
 }  // namespace hermes::net::rtp

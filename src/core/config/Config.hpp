@@ -25,7 +25,17 @@ static constexpr int MS = 20;
 static constexpr size_t PAYLOAD_TYPE = 8;  // PCMA (G.711 A-law)
 static constexpr size_t BUFFER_SIZE = 1024UZ * 128UZ;
 static constexpr size_t RTP_HEADER_SIZE = 12;
+static constexpr std::array<uint8_t, 16> STATIC_RTP_KEY = {
+    0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
+    0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
+static const std::vector<uint8_t> STATIC_SALT = {
+    0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18,
+    0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E, 0x8F, 0x90};
 
+static const std::vector<uint8_t> STATIC_MASTER_KEY = {
+        0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
+        0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C
+    };
 // Audio Soft-Clipping Limits (to avoid hardware distortion near max/min)
 static constexpr float MAX_INT16 = 32767.0F;
 static constexpr size_t CLIP_LIMIT_POSITIVE = 30000;
@@ -58,7 +68,7 @@ struct AppConfig {
   JnausConfig janus;
 };
 
-enum class SessionType { Standard, WebRTC };
+enum class SessionType { Standard, StandartEncrypted, WebRTC };
 /**
  * @brief Loads configuration from a TOML file.
  * @param path Path to the .toml file (default: "config.toml")

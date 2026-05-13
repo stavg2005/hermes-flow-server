@@ -2,17 +2,54 @@
 
 #include <algorithm>
 #include <expected>
-#include <filesystem>
 #include <vector>
 
-#include "FileSink.hpp"
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/experimental/channel.hpp>
+
 #include "Nodes.hpp"
 #include "Types.hpp"
+
+namespace {
+/**
+ * @brief Helper to dynamically execute multiple awaitables in parallel using a channel.
+ */
+template <typename T, typename AsyncFunc>
+boost::asio::awaitable<std::expected<void, hermes::config::ErrorInfo>> await_all_dynamic(
+    boost::asio::io_context& io, const std::vector<T*>& items, AsyncFunc&& async_func) {
+  if (items.empty()) {
+    co_return std::expected<void, hermes::config::ErrorInfo>();
+  }
+
+  boost::asio::experimental::channel<void(boost::system::error_code, std::expected<void, hermes::config::ErrorInfo>)> ch(io, items.size());
+
+  for (auto* item : items) {
+    boost::asio::co_spawn(
+        io,
+        [item, &ch, &async_func]() -> boost::asio::awaitable<void> {
+          auto res = co_await async_func(item);
+          ch.try_send(boost::system::error_code{}, res);
+        },
+        boost::asio::detached);
+  }
+
+  std::expected<void, hermes::config::ErrorInfo> final_res;
+  for (size_t i = 0; i < items.size(); ++i) {
+    boost::system::error_code ec;
+    auto res = co_await ch.async_receive(boost::asio::redirect_error(boost::asio::use_awaitable, ec));
+    if (!res && final_res.has_value()) {
+      final_res = res;
+    }
+  }
+  ch.close();
+  co_return final_res;
+}
+} // namespace
+
 #include "core/graph/Node.hpp"
-#include "network/s3/S3Session.hpp"
 #include "spdlog/spdlog.h"
 #include "unordered_set"
-using namespace hermes::net::s3;
 using namespace hermes::service;
 
 namespace hermes::audio {
@@ -33,7 +70,6 @@ void AudioExecutor::detect_and_flag_loops() const {
   std::unordered_set<Node*> visited;
   Node* cycle_start = nullptr;
 
-  // 1. Traverse and detect the cycle
   while (curr != nullptr) {
     if (!visited.insert(curr).second) {
       cycle_start = curr;  // Found the start of the cycle
@@ -42,7 +78,6 @@ void AudioExecutor::detect_and_flag_loops() const {
     curr = curr->next();
   }
 
-  // 2. Flag the nodes participating in the cycle
   if (cycle_start != nullptr) {
     spdlog::info("Loop detected in graph! Flagging loop nodes...");
     Node* loop_node = cycle_start;
@@ -62,25 +97,20 @@ AudioExecutor::prepare() {
                     "Invalid Graph: No start node");
   }
 
-  // Step 1: Fetch remote files if needed
   auto fetch_res = co_await ensure_assets_exist();
   if (!fetch_res) {
     co_return std::unexpected(fetch_res.error());
   }
 
-  // Step 2: Pre-fill buffers
   auto init_res = co_await initialize_nodes();
   if (!init_res) {
     co_return std::unexpected(init_res.error());
   }
 
-  // Step 3: Configure mixer durations
   update_mixers();
 
-  // Step 4: Detect loops in graph
   detect_and_flag_loops();
 
-  // Step 5: Finalize session state
   current_node_ = graph_.start_node;
   stats_.current_node_id = current_node_->id();
   stats_.total_bytes_sent = 0;
@@ -90,21 +120,11 @@ AudioExecutor::prepare() {
 
 boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
 AudioExecutor::ensure_assets_exist() {
-  spdlog::info("Checking asset availability...");
-
-  for (const auto& node : graph_.nodes) {
-    if (node->kind() != NodeKind::FileInput) {
-      continue;
-    }
-
-    auto* file_node = static_cast<FileInputNode*>(node.get());
-    auto results = co_await file_node->ensure_file_exists(s3_config_);
-    if (!results) {
-      co_return std::unexpected<config::ErrorInfo>(results.error());
-    }
-  }
-
-  co_return std::expected<void, config::ErrorInfo>();
+  spdlog::info("Ensuring all file assets exist...");
+  
+  co_return co_await await_all_dynamic(
+      io_, graph_.file_nodes,
+      [this](auto* node) { return node->ensure_file_exists(s3_config_); });
 }
 
 boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
@@ -112,22 +132,15 @@ AudioExecutor::initialize_nodes() {
   spdlog::info("Initializing async nodes...");
 
   for (const auto& node : graph_.nodes) {
-    // Check if this node implements IAsyncInitializer (e.g. AsyncAudioSource)
-    if (auto* async_node = dynamic_cast<IAsyncInitializer*>(node.get())) {
-      spdlog::debug("Initializing buffers for node [{}]", node->id());
-      co_await async_node->initialize_buffers();
-    }
+    spdlog::debug("Initializing buffers for node [{}]", node->id());
+    co_await node->initialize_buffers();
   }
   co_return std::expected<void, config::ErrorInfo>();
 }
 
 void AudioExecutor::update_mixers() {
-  for (const auto& node : graph_.nodes) {
-    if (node->kind() == NodeKind::Mixer) {
-      if (auto* mixer = dynamic_cast<MixerNode*>(node.get())) {
-        mixer->set_max_frames();
-      }
-    }
+  for (auto* mixer : graph_.mixer_nodes) {
+    mixer->set_max_frames();
   }
 }
 std::pair<bool, config::NodeError> AudioExecutor::get_next_frame(
@@ -141,15 +154,13 @@ std::pair<bool, config::NodeError> AudioExecutor::get_next_frame(
 
   std::fill(output_buffer.begin(), output_buffer.end(), 0);
 
-  auto* audio_node = current_node_->as_audio();
-  if (!audio_node) {
-    // Current node is not an audio processor (e.g. Logic node), stop.
+  auto result = current_node_->process_frame(output_buffer);
+
+  if (!result && result.error().code == config::NodeErrorCode::NotSupported) {
+    // Current node is not an audio processor, stop.
     return {false, config::NodeError{config::NodeErrorCode::Success, "", ""}};
   }
 
-  auto result = audio_node->process_frame(output_buffer);
-
-  // 1. Handle Active Errors (Ignore EndOfStream as it's a lifecycle event)
   if (!result && result.error().code != config::NodeErrorCode::EndOfStream) {
     // Underruns are non-critical, we tell the caller to continue (true)
     bool is_recoverable =
@@ -157,7 +168,6 @@ std::pair<bool, config::NodeError> AudioExecutor::get_next_frame(
     return {is_recoverable, result.error()};
   }
 
-  // 2. Handle Node Lifecycle / Graph Traversal
   bool is_eos =
       (!result && result.error().code == config::NodeErrorCode::EndOfStream);
   if (is_eos || current_node_->is_complete()) {
@@ -174,11 +184,9 @@ std::pair<bool, config::NodeError> AudioExecutor::get_next_frame(
 }
 
 std::expected<void, config::NodeError> AudioExecutor::advance_to_next_node() {
-  if (auto* audio_node = current_node_->as_audio()) {
-    auto close_result = audio_node->close();
-    if (!close_result) {
-      return std::unexpected(close_result.error());
-    }
+  auto close_result = current_node_->close();
+  if (!close_result) {
+    return std::unexpected(close_result.error());
   }
 
   spdlog::info(

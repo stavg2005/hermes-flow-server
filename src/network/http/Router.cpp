@@ -7,6 +7,7 @@
 #include <boost/json.hpp>
 #include <expected>
 #include <string>
+#include <sstream>
 
 #include "Types.hpp"
 #include "boost/beast/http/verb.hpp"
@@ -35,8 +36,17 @@ beast::http::status map_app_error(AppError err) {
   }
 }
 
-// namespace
-
+// Helper for extracting ID from request query params
+std::expected<std::string, RouteError> extract_session_id(const req_t& req) {
+  boost::urls::url_view url{req.target()};
+  auto params = url.params();
+  auto it = params.find("id");
+  if (it == params.end()) {
+    return std::unexpected(RouteError{beast::http::status::bad_request,
+                                      "Missing query parameter: id"});
+  }
+  return std::string((*it)->value);
+}
 Router::Router(ActiveSessions& active, std::shared_ptr<IoContextPool> pool)
     : active_(active), pool_(std::move(pool)) {}
 
@@ -64,6 +74,7 @@ void Router::route_query(const req_t& req, res_t& res,
     // clang-format off
     auto try_routes = [&]() -> std::expected<void, RouteError> {
       if (auto match = match_route("/transmit/", beast::http::verb::post, [&] { return handle_transmit(req, res); })) { return *match; }
+      if(auto match = match_route("/secure_transmit/", beast::http::verb::post,[&]{return handle_secure_transmit(req,res);})){return *match;}
       if (auto match = match_route("/preview/", beast::http::verb::post, [&] { return handle_webrtc_request(req, res); })) { return *match; }
       if (auto match = match_route("/connect/", beast::http::verb::get, [&] { return handle_websocket_request(req, res, stream); })) { return *match; }
       if (auto match = match_route("/stop/", beast::http::verb::post, [&] { return handle_stop(req, res); })) { return *match; }
@@ -126,17 +137,18 @@ std::expected<void, RouteError> Router::handle_transmit(const req_t& req,
   return process_session_request(req, res, SessionType::Standard, "/transmit");
 }
 
+std::expected<void, RouteError> Router::handle_secure_transmit(const req_t& req,
+                                                               res_t& res) {
+  return process_session_request(req, res, SessionType::StandartEncrypted,
+                                 "/secure_transmit");
+}
+
 std::expected<void, RouteError> Router::handle_stop(const req_t& req,
                                                     res_t& res) {
-  boost::urls::url_view url{req.target()};
-  auto params = url.params();
-  auto it = params.find("id");
-  if (it == params.end()) {
-    return std::unexpected(RouteError{beast::http::status::bad_request,
-                                      "Missing query parameter: id"});
-  }
-
-  std::string id((*it)->value);
+  auto id_res = extract_session_id(req);
+  if (!id_res) return std::unexpected(id_res.error());
+  
+  std::string id = *id_res;
   auto status = active_.remove_session(id);
 
   using enum ActiveSessions::SessionOpStatus;
@@ -156,15 +168,10 @@ std::expected<void, RouteError> Router::handle_stop(const req_t& req,
 
 std::expected<void, RouteError> Router::handle_pause(const req_t& req,
                                                      res_t& res) {
-  boost::urls::url_view url{req.target()};
-  auto params = url.params();
-  auto it = params.find("id");
-  if (it == params.end()) {
-    return std::unexpected(RouteError{beast::http::status::bad_request,
-                                      "Missing query parameter: id"});
-  }
-
-  std::string id((*it)->value);
+  auto id_res = extract_session_id(req);
+  if (!id_res) return std::unexpected(id_res.error());
+  
+  std::string id = *id_res;
   auto status = active_.pause_session(id);
 
   using enum ActiveSessions::SessionOpStatus;
@@ -184,15 +191,10 @@ std::expected<void, RouteError> Router::handle_pause(const req_t& req,
 
 std::expected<void, RouteError> Router::handle_resume(const req_t& req,
                                                       res_t& res) {
-  boost::urls::url_view url{req.target()};
-  auto params = url.params();
-  auto it = params.find("id");
-  if (it == params.end()) {
-    return std::unexpected(RouteError{beast::http::status::bad_request,
-                                      "Missing query parameter: id"});
-  }
-
-  std::string id((*it)->value);
+  auto id_res = extract_session_id(req);
+  if (!id_res) return std::unexpected(id_res.error());
+  
+  std::string id = *id_res;
   auto status = active_.resume_session(id);
 
   using enum ActiveSessions::SessionOpStatus;
@@ -222,16 +224,10 @@ std::expected<void, RouteError> Router::handle_websocket_request(
                                       "Request is not a WebSocket upgrade"});
   }
 
-  boost::urls::url_view url{req.target()};
-  auto params = url.params();
-  auto it = params.find("id");
-
-  if (it == params.end()) {
-    return std::unexpected(RouteError{beast::http::status::bad_request,
-                                      "Missing query parameter: id"});
-  }
-
-  std::string id((*it)->value);
+  auto id_res = extract_session_id(req);
+  if (!id_res) return std::unexpected(id_res.error());
+  
+  std::string id = *id_res;
   spdlog::info("Attaching WebSocket to session: {}", id);
 
   auto result = active_.create_and_run_websocket_session(id, req, stream);
@@ -246,73 +242,50 @@ std::expected<void, RouteError> Router::handle_websocket_request(
 
 std::expected<void, RouteError> Router::handle_metrics(const req_t& req,
                                                        res_t& res) {
-  std::string body;
+  std::ostringstream oss;
 
   // Total HTTP Requests
-  body +=
-      "# HELP hermes_http_requests_total Total number of HTTP requests "
-      "processed.\n";
-  body += "# TYPE hermes_http_requests_total counter\n";
-  body += "hermes_http_requests_total " +
-          std::to_string(http_requests_total_.load(std::memory_order_relaxed)) +
-          "\n";
+  oss << "# HELP hermes_http_requests_total Total number of HTTP requests processed.\n"
+      << "# TYPE hermes_http_requests_total counter\n"
+      << "hermes_http_requests_total " << http_requests_total_.load(std::memory_order_relaxed) << "\n";
 
   // Total Sessions Created
-  body +=
-      "# HELP hermes_total_sessions_created_total Total number of sessions "
-      "instantiated.\n";
-  body += "# TYPE hermes_total_sessions_created_total counter\n";
-  body += "hermes_total_sessions_created_total " +
-          std::to_string(active_.get_total_sessions_created()) + "\n";
+  oss << "# HELP hermes_total_sessions_created_total Total number of sessions instantiated.\n"
+      << "# TYPE hermes_total_sessions_created_total counter\n"
+      << "hermes_total_sessions_created_total " << active_.get_total_sessions_created() << "\n";
 
   // Active Sessions
-  body +=
-      "# HELP hermes_active_sessions_total Number of currently active audio "
-      "sessions.\n";
-  body += "# TYPE hermes_active_sessions_total gauge\n";
-  body +=
-      "hermes_active_sessions_total " + std::to_string(active_.size()) + "\n";
+  oss << "# HELP hermes_active_sessions_total Number of currently active audio sessions.\n"
+      << "# TYPE hermes_active_sessions_total gauge\n"
+      << "hermes_active_sessions_total " << active_.size() << "\n";
 
   // Active WebSockets
-  body +=
-      "# HELP hermes_active_websockets_total Number of currently connected "
-      "WebSockets.\n";
-  body += "# TYPE hermes_active_websockets_total gauge\n";
-  body += "hermes_active_websockets_total " +
-          std::to_string(active_.get_active_websockets_count()) + "\n";
+  oss << "# HELP hermes_active_websockets_total Number of currently connected WebSockets.\n"
+      << "# TYPE hermes_active_websockets_total gauge\n"
+      << "hermes_active_websockets_total " << active_.get_active_websockets_count() << "\n";
 
   // Available WebRTC Ports
-  body +=
-      "# HELP hermes_available_webrtc_ports Number of WebRTC UDP ports "
-      "currently available.\n";
-  body += "# TYPE hermes_available_webrtc_ports gauge\n";
-  body += "hermes_available_webrtc_ports " +
-          std::to_string(active_.get_available_webrtc_ports_count()) + "\n";
+  oss << "# HELP hermes_available_webrtc_ports Number of WebRTC UDP ports currently available.\n"
+      << "# TYPE hermes_available_webrtc_ports gauge\n"
+      << "hermes_available_webrtc_ports " << active_.get_available_webrtc_ports_count() << "\n";
 
   // Per-session RTP stats
   auto stats = active_.get_all_session_rtp_stats();
   if (!stats.empty()) {
-    body +=
-        "# HELP hermes_rtp_bytes_sent_total Total RTP bytes sent by a "
-        "session.\n";
-    body += "# TYPE hermes_rtp_bytes_sent_total counter\n";
+    oss << "# HELP hermes_rtp_bytes_sent_total Total RTP bytes sent by a session.\n"
+        << "# TYPE hermes_rtp_bytes_sent_total counter\n";
     for (const auto& s : stats) {
-      body += "hermes_rtp_bytes_sent_total{session_id=\"" + s.id + "\"} " +
-              std::to_string(s.bytes_sent) + "\n";
+      oss << "hermes_rtp_bytes_sent_total{session_id=\"" << s.id << "\"} " << s.bytes_sent << "\n";
     }
 
-    body +=
-        "# HELP hermes_rtp_packets_sent_total Total RTP packets sent by a "
-        "session.\n";
-    body += "# TYPE hermes_rtp_packets_sent_total counter\n";
+    oss << "# HELP hermes_rtp_packets_sent_total Total RTP packets sent by a session.\n"
+        << "# TYPE hermes_rtp_packets_sent_total counter\n";
     for (const auto& s : stats) {
-      body += "hermes_rtp_packets_sent_total{session_id=\"" + s.id + "\"} " +
-              std::to_string(s.packets_sent) + "\n";
+      oss << "hermes_rtp_packets_sent_total{session_id=\"" << s.id << "\"} " << s.packets_sent << "\n";
     }
   }
 
-  ResponseBuilder::build_plaintext_response(res, body, req.version(),
-                                            req.keep_alive());
+  ResponseBuilder::build_plaintext_response(res, oss.str(), req.version(), req.keep_alive());
   return {};
 }
 

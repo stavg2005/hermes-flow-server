@@ -11,7 +11,8 @@ services:
       - hermes_build_cache:/app/build
     depends_on:
       - minio
-    privileged: true
+    cap_add:
+      - SYS_ADMIN  # Required for io_uring
     environment:
       - S3_HOST=localhost
       - S3_PORT=9000

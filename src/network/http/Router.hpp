@@ -32,7 +32,7 @@ class Router {
  private:
   // Handlers now return an expected result
   std::expected<void, RouteError> handle_transmit(const req_t& req, res_t& res);
-
+  std::expected<void, RouteError> handle_secure_transmit(const req_t& req, res_t& res);
   /**
    * @brief Upgrades to WebSocket. Socket ownership is moved to WebSocketSession
    */

@@ -5,8 +5,6 @@
 #include <algorithm>
 #include <chrono>
 #include <expected>
-#include <fstream>
-#include <vector>
 
 #include "BasicNodes.hpp"
 #include "FileSink.hpp"
@@ -27,7 +25,6 @@ FileInputNode::FileInputNode(boost::asio::io_context& io, std::string name,
       io_(io) {
   kind_ = NodeKind::FileInput;
 
-  // Initialize the engine component with our fetch_bytes lambda
   buffer_controller_ = std::make_shared<AsyncBufferController>(
       io_, [this](std::span<uint8_t> dest) { return fetch_bytes(dest); });
 }
@@ -38,13 +35,30 @@ std::expected<void, NodeError> FileInputNode::open() {
   boost::system::error_code ec;
 
   while (attempt < max_retries) {
-    file_handle_.open(file_path_, boost::asio::file_base::read_only,
-                      ec);  // NOLINT
+    file_handle_.open(file_path_, boost::asio::file_base::read_only,// NOLINT(bugprone-unused-return-value)
+                      ec);
 
     if (!ec && file_handle_.is_open()) {
-      total_frames_ = static_cast<int>(file_handle_.size() / FRAME_SIZE_BYTES);
-      spdlog::info("[{}] Opened file. Total frames: {}", file_name_,
-                   total_frames_);
+      constexpr size_t HEADER_BUF_SIZE = 256;
+      std::array<uint8_t, HEADER_BUF_SIZE> header_buf;
+      size_t bytes_read = file_handle_.read_some(boost::asio::buffer(header_buf), ec);
+
+      size_t offset = 0;
+      if (!ec && bytes_read > 0) {
+        offset = wav::get_audio_data_offset(std::span<uint8_t>(header_buf.data(), bytes_read));
+      }
+
+      file_handle_.seek(static_cast<int64_t>(offset), boost::asio::file_base::seek_set, ec);
+      if (ec) {
+        spdlog::warn("[{}] Failed to seek file past header: {}", file_name_, ec.message());
+        offset = 0;
+        file_handle_.seek(0, boost::asio::file_base::seek_set, ec);
+      }
+
+      uint64_t file_size = file_handle_.size(ec);
+      total_frames_ = static_cast<int>((file_size > static_cast<uint64_t>(offset) ? file_size - static_cast<uint64_t>(offset) : 0ULL) / FRAME_SIZE_BYTES);
+
+      spdlog::info("[{}] Opened file. Offset: {}, Total frames: {}", file_name_, offset, total_frames_);
       return {};  // Success
     }
 
@@ -69,7 +83,6 @@ std::expected<void, NodeError> FileInputNode::close() {
   }
   spdlog::info("closed file input {}", file_name_);
   // Reset internal state for potential reuse
-  is_first_read_ = true;
   processed_frames_ = 0;
   pitch_shifter_.reset();
 
@@ -104,19 +117,16 @@ boost::asio::awaitable<void> FileInputNode::initialize_buffers() {
 
 std::expected<void, config::NodeError> FileInputNode::process_frame(
     std::span<uint8_t> buffer) {
-  // 1. Check for End of Stream
   if (processed_frames_ >= total_frames_ && total_frames_ > 0) {
     std::fill(buffer.begin(), buffer.end(), 0);
     return error(NodeErrorCode::EndOfStream, "End of stream for {}", id_);
   }
 
-  // 2. Fetch data via the controller
   auto result = buffer_controller_->get_frame(buffer, 0);
 
   if (!result) {
-    return result;  // Return Underruns upstream
+    return result;
   }
-  // 3. Apply specific File Input DSP (Gain, Pitch)
   apply_effects(buffer);
 
   processed_frames_++;
@@ -145,19 +155,6 @@ boost::asio::awaitable<size_t> FileInputNode::fetch_bytes(
         boost::asio::as_tuple(boost::asio::use_awaitable));
 
     if (!ec || ec == boost::asio::error::eof) {
-      if (this->is_first_read_ && bytes_read > 0) {
-        size_t offset = wav::get_audio_data_offset(std::span<uint8_t>(dest.data(), bytes_read));
-        if (offset > 0 && offset < bytes_read) {
-          std::memmove(dest.data(), dest.data() + offset, bytes_read - offset);
-          size_t extra_needed = offset;
-          auto [ec2, extra_bytes] = co_await boost::asio::async_read(
-              file_handle_, boost::asio::buffer(dest.data() + bytes_read - offset, extra_needed),
-              boost::asio::as_tuple(boost::asio::use_awaitable));
-          bytes_read = bytes_read - offset + extra_bytes;
-        }
-        this->is_first_read_ = false;
-      }
-      // Base class handles zero-filling if bytes_read < dest.size()
       co_return bytes_read;
     } else {
       spdlog::warn("[{}] Read attempt {} failed: {}", file_name_, attempt + 1,
@@ -185,24 +182,23 @@ void FileInputNode::apply_effects(std::span<uint8_t> frame_buffer) {
   size_t num_samples = frame_buffer.size() / sizeof(int16_t);
   std::span<int16_t> audio_span(samples, num_samples);
 
-  // 1. Apply Gain
   if (options_->gain != 1.0) {
-    float gain = options_->gain;
+    float gain = static_cast<float>(options_->gain);
+    constexpr int32_t MIN_INT16 = -32768;
+    constexpr int32_t MAX_INT16 = 32767;
     for (auto& sample : audio_span) {
-      int32_t boosted = static_cast<int32_t>(sample * gain);
-      sample = static_cast<int16_t>(std::clamp(boosted, -32768, 32767));
+      int32_t boosted = static_cast<int32_t>(static_cast<float>(sample) * gain);
+      sample = static_cast<int16_t>(std::clamp(boosted, MIN_INT16, MAX_INT16));
     }
   }
 
-  // 2. Apply Pitch Shift (Delegated to the dedicated class)
   if (options_->pitch_shift != 0.0) {
-    pitch_shifter_.process(audio_span, options_->pitch_shift);
+    pitch_shifter_.process(audio_span, static_cast<float>(options_->pitch_shift));
   }
 }
 
 boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
 FileInputNode::download_from_s3(const config::S3Config& s3_config) {
-  // 1. Create S3 Session
   auto session_result = hermes::net::s3::S3Session::create(io_, s3_config);
   if (!session_result) {
     co_return std::unexpected(session_result.error());
@@ -212,20 +208,17 @@ FileInputNode::download_from_s3(const config::S3Config& s3_config) {
       session_result.value());
   infra::FileSink sink(io_);
 
-  // 2. Prepare local file sink
   if (auto res = sink.Prepare(file_path_); !res) {
     co_return std::unexpected(config::ErrorInfo::From(
         config::AppError::FileSystemError, "Sink Prep Failed: " + res.error()));
   }
 
-  // 3. Execute Streamed Download
   auto download_result = co_await s3_session->request_file(file_name_, sink);
   if (!download_result) {
     // Note: PartialFileGuard handles cleanup automatically here
     co_return std::unexpected(download_result.error());
   }
 
-  // 4. Commit file to disk
   sink.Commit();
   spdlog::info("[{}] Download complete.", file_name_);
 

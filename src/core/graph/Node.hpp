@@ -6,6 +6,7 @@
 #include <expected>
 #include <memory>
 #include <span>
+#include <boost/asio/awaitable.hpp>
 
 namespace hermes::audio {
 constexpr int RETRY_DELAY_MS = 50;
@@ -15,28 +16,6 @@ static constexpr int min_16_bytes = -32767;
  * @brief Type of node in the audio processing graph.
  */
 enum class NodeKind { FileInput, Mixer, Delay, Clients, FileOptions };
-
-/**
- * @brief Interface for nodes that can produce audio frames.
- */
-struct IAudioProcessor {
-  /** @brief Process the next audio frame into the provided buffer. */
-  virtual std::expected<void, config::NodeError> process_frame(
-      std::span<uint8_t> frame_buffer) = 0;
-
-  /** @brief Release resources and reset node state. */
-  virtual std::expected<void, config::NodeError> close() = 0;
-
-  virtual ~IAudioProcessor() = default;
-};
-
-/**
- * @brief Interface for nodes that need async initialization.
- */
-struct IAsyncInitializer {
-  virtual boost::asio::awaitable<void> initialize_buffers() = 0;
-  virtual ~IAsyncInitializer() = default;
-};
 
 struct Node : public std::enable_shared_from_this<Node> {
  public:
@@ -66,7 +45,19 @@ struct Node : public std::enable_shared_from_this<Node> {
     in_buffer_processed_frames_ = 0;
   }
 
-  virtual IAudioProcessor* as_audio();
+  // --- Default Node Behaviors ---
+  virtual boost::asio::awaitable<void> initialize_buffers() {
+      co_return;
+  }
+
+  virtual std::expected<void, config::NodeError> process_frame(std::span<uint8_t> frame_buffer) {
+      return error(config::NodeErrorCode::NotSupported, "Not an audio processor", id_);
+  }
+
+  virtual std::expected<void, config::NodeError> close() {
+      return {};
+  }
+
   virtual std::expected<void, config::NodeError> connect_input(Node* source);
   void wire_standard(Node* source);
 
@@ -90,9 +81,17 @@ struct Node : public std::enable_shared_from_this<Node> {
   }
 };
 
+class FileInputNode;
+class MixerNode;
+class ClientsNode;
+
 struct Graph {
   std::vector<std::shared_ptr<Node>> nodes;
   std::unordered_map<std::string, Node*> node_map;
   Node* start_node;
+
+  std::vector<FileInputNode*> file_nodes;
+  std::vector<MixerNode*> mixer_nodes;
+  ClientsNode* clients_node = nullptr;
 };
 }  // namespace hermes::audio
