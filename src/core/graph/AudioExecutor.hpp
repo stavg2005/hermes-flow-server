@@ -14,6 +14,15 @@ namespace hermes::audio {
 class AudioExecutor {
  public:
   /**
+   * @brief Factory method to safely validate and instantiate an AudioExecutor.
+   * Replaces exception-throwing constructor to comply with monadic error
+   * handling.
+   */
+  static std::expected<std::unique_ptr<AudioExecutor>, config::ErrorInfo>
+  create(boost::asio::io_context& io, const Graph& graph,
+         config::S3Config s3_config);
+
+  /**
    * @brief Constructs the executor with a parsed graph.
    * @param io The IO context for async file operations.
    * @param graph The audio graph structure containing nodes and edges.
@@ -63,8 +72,9 @@ class AudioExecutor {
    */
   std::expected<void, config::NodeError> advance_to_next_node();
 
-    /**
-   * @brief Traverses the graph to find any cycles (loops) and flags the involved nodes.
+  /**
+   * @brief Traverses the graph to find any cycles (loops) and flags the
+   * involved nodes.
    */
   void detect_and_flag_loops() const;
 

@@ -14,6 +14,8 @@
 #include "spdlog/spdlog.h"
 
 using namespace hermes::net::http;
+using namespace hermes::infra;
+using namespace hermes::config;
 namespace hermes::net {
 
 std::expected<std::shared_ptr<Listener>, ErrorInfo> Listener::create(

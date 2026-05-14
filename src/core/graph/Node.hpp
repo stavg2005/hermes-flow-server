@@ -10,8 +10,8 @@
 
 namespace hermes::audio {
 constexpr int RETRY_DELAY_MS = 50;
-static constexpr int max_16_bytes = 32767;
-static constexpr int min_16_bytes = -32767;
+inline constexpr int max_16_bytes = 32767;
+inline constexpr int min_16_bytes = -32767;
 /**
  * @brief Type of node in the audio processing graph.
  */

@@ -7,12 +7,10 @@
 #include <string>
 
 #include "AudioExecutor.hpp"
+#include "Config.hpp"
 #include "ISessionObserver.hpp"
 #include "RTPStreamer.hpp"
 #include "Types.hpp"
-
-using namespace hermes::net::rtp;
-using namespace hermes::audio;
 
 namespace hermes::service {
 /**
@@ -28,9 +26,16 @@ namespace hermes::service {
  */
 
 using signal_channel =
-    asio::experimental::channel<void(boost::system::error_code)>;
+    boost::asio::experimental::channel<void(boost::system::error_code)>;
 class Session : public std::enable_shared_from_this<Session> {
  public:
+  static std::expected<std::shared_ptr<Session>, config::ErrorInfo> create(
+      boost::asio::io_context& io, std::string id, audio::Graph&& g,
+      const config::S3Config& s3_config,
+      const config::CryptoConfig& crypto_config, bool is_web_rtc,
+      std::string janus_ip, std::optional<uint16_t> janus_port,
+      bool is_encrypted);
+
   /**
    * @brief Constructs a new Session.
    *
@@ -38,11 +43,11 @@ class Session : public std::enable_shared_from_this<Session> {
    * @param id A unique identifier for this session.
    * @param g The audio graph to execute (moved into the session).
    */
-  Session(boost::asio::io_context& io, std::string id, Graph&& g,
-          const config::S3Config& s3_config, bool is_web_rtc = false,
-          std::string janus_ip = "",
-          std::optional<uint16_t> janus_port = std::nullopt,
-          bool is_encrypted = false);
+  Session(boost::asio::io_context& io, std::string id,
+          std::unique_ptr<audio::Graph> g,
+          std::unique_ptr<audio::AudioExecutor> audio_executor,std::unique_ptr<net::rtp::RTPStreamer> streamer, bool is_web_rtc,
+          std::string janus_ip, std::optional<uint16_t> janus_port,
+          bool is_encrypted);
 
   /**
    * @brief Destructor.
@@ -97,22 +102,19 @@ class Session : public std::enable_shared_from_this<Session> {
   bool is_running() const;
 
  private:
-  asio::io_context& io_;
+  boost::asio::io_context& io_;
   std::string id_;
   std::atomic<bool> is_running_{false};
   std::atomic<bool> is_paused_{false};
   bool is_webrtc_{false};
   std::string janus_ip_;
   std::optional<uint16_t> janus_port_;
-  std::unique_ptr<Graph> graph_;
-  std::unique_ptr<AudioExecutor> audio_executor_;
-  std::unique_ptr<RTPStreamer> streamer_;
+  std::unique_ptr<audio::Graph> graph_;
+  std::unique_ptr<audio::AudioExecutor> audio_executor_;
+  std::unique_ptr<net::rtp::RTPStreamer> streamer_;
   signal_channel resume_channel_;
-  asio::steady_timer timer_;
+  boost::asio::steady_timer timer_;
   std::unique_ptr<ISessionObserver> observer_;
-
-
-
 
   /**
    * @brief Scans the graph for 'ClientsNode' and registers them with the

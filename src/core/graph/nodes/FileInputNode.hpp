@@ -10,7 +10,7 @@
 
 #include "AsyncBufferController.hpp" // Replaced AsyncAudioSource
 #include "BasicNodes.hpp"
-#include "PitchShifter.h"
+#include "PitchShifter.hpp"
 #include "core/config/Types.hpp"
 
 namespace hermes::audio {
@@ -26,11 +26,6 @@ struct FileInputNode : public Node {
   boost::asio::stream_file file_handle_;
   FileOptionsNode* options_ = nullptr;
   PitchShifter pitch_shifter_;
-
-
-  // Frame Tracking 
-  int total_frames_ = 0;
-  int processed_frames_ = 0;
 
   explicit FileInputNode(boost::asio::io_context& io, std::string name,
                          std::string path);

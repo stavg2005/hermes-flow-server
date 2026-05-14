@@ -5,6 +5,8 @@
 #include <span>
 #include <vector>
 
+#include "PcmCast.hpp"
+
 namespace hermes::audio {
 
 class AudioMath {
@@ -39,11 +41,10 @@ public:
      * @brief Batch processes an accumulator into an output buffer.
      */
     static void compress_and_export(std::span<const int32_t> accumulator, std::span<uint8_t> output_bytes) {
-        auto* out_samples = reinterpret_cast<int16_t*>(output_bytes.data());
         size_t count = output_bytes.size() / sizeof(int16_t);
 
         for (size_t i = 0; i < count; ++i) {
-            out_samples[i] = soft_clip(accumulator[i]);
+            pcm::write_sample(output_bytes.data(), i, soft_clip(accumulator[i]));
         }
     }
 };

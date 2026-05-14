@@ -7,19 +7,20 @@
 #include "Session.hpp"
 #include "WebSocketSession.hpp"
 
-using namespace hermes::net::websocket;
-using namespace hermes::service;
+
+
+namespace hermes::net::websocket {
 /**
  * @brief This class pushes JSON events to the client.
  */
-class WebSocketSessionObserver : public ISessionObserver {
-  std::weak_ptr<WebSocketSession> ws_;
+class WebSocketSessionObserver : public service::ISessionObserver {
+  std::weak_ptr<websocket::WebSocketSession> ws_;
 
  public:
   explicit WebSocketSessionObserver(std::shared_ptr<WebSocketSession> ws)
       : ws_(ws) {}
 
-  void on_stats_update(const SessionStats& stats) override {
+  void on_stats_update(const service::SessionStats& stats) override {
     if (auto session = ws_.lock()) {
       boost::json::object j;
       j["type"] = "stats";
@@ -60,3 +61,4 @@ class WebSocketSessionObserver : public ISessionObserver {
     }
   }
 };
+}  // namespace hermes::net::websocket

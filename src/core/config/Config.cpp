@@ -11,6 +11,21 @@ constexpr uint16_t DEFAULT_SERVER_PORT = 8080;
 constexpr uint16_t DEFAULT_JANUS_PORT_START = 10000;
 constexpr uint16_t DEFAULT_JANUS_PORT_END = 10200;
 
+static std::vector<uint8_t> hex_to_bytes(const std::string& hex) {
+  if (hex.length() % 2 != 0) {
+    throw std::invalid_argument("Hex string must have an even length");
+  }
+  std::vector<uint8_t> bytes;
+  bytes.reserve(hex.length() / 2);
+  for (size_t i = 0; i < hex.length(); i += 2) {
+    std::string byteString = hex.substr(i, 2);
+    uint8_t byte =
+        static_cast<uint8_t>(strtol(byteString.c_str(), nullptr, 16));
+    bytes.push_back(byte);
+  }
+  return bytes;
+}
+
 template <typename T>
 std::expected<T, std::string> require_key(
     const toml::node_view<toml::node>& node, const char* key) {
@@ -42,7 +57,8 @@ std::expected<AppConfig, ErrorInfo> load_config(const std::string& path) {
   // Server Settings
   if (auto server = tbl["server"]) {
     config.server.address = server["address"].value_or("0.0.0.0");
-    config.server.port = server["port"].value_or<uint16_t>(uint16_t{DEFAULT_SERVER_PORT});
+    config.server.port =
+        server["port"].value_or<uint16_t>(uint16_t{DEFAULT_SERVER_PORT});
     config.server.threads = server["threads"].value_or<unsigned int>(1);
   }
 
@@ -59,7 +75,8 @@ std::expected<AppConfig, ErrorInfo> load_config(const std::string& path) {
     } else {
       auto ak_res = require_key<std::string>(s3, "access_key");
       if (!ak_res) {
-        return std::unexpected(ErrorInfo::From(AppError::ConfigError, "Missing S3 access_key"));
+        return std::unexpected(
+            ErrorInfo::From(AppError::ConfigError, "Missing S3 access_key"));
       }
       config.s3.access_key = *ak_res;
     }
@@ -69,7 +86,8 @@ std::expected<AppConfig, ErrorInfo> load_config(const std::string& path) {
     } else {
       auto sk_res = require_key<std::string>(s3, "secret_key");
       if (!sk_res) {
-        return std::unexpected(ErrorInfo::From(AppError::ConfigError, "Missing S3 secret_key"));
+        return std::unexpected(
+            ErrorInfo::From(AppError::ConfigError, "Missing S3 secret_key"));
       }
       config.s3.secret_key = *sk_res;
     }
@@ -77,8 +95,25 @@ std::expected<AppConfig, ErrorInfo> load_config(const std::string& path) {
 
   if (auto janus = tbl["janus"]) {
     config.janus.address = janus["address"].value_or("127.0.0.1");
-    config.janus.port_start = janus["port_start"].value_or<uint16_t>(uint16_t{DEFAULT_JANUS_PORT_START});
-    config.janus.port_end = janus["port_end"].value_or<uint16_t>(uint16_t{DEFAULT_JANUS_PORT_END});
+    config.janus.port_start = janus["port_start"].value_or<uint16_t>(
+        uint16_t{DEFAULT_JANUS_PORT_START});
+    config.janus.port_end =
+        janus["port_end"].value_or<uint16_t>(uint16_t{DEFAULT_JANUS_PORT_END});
+  }
+
+  if (auto crypto_node = tbl["crypto"]) {
+    std::string key_hex = crypto_node["master_key"].value_or("");
+    std::string salt_hex = crypto_node["salt"].value_or("");
+
+    if (key_hex.empty() || salt_hex.empty()) {
+      throw std::runtime_error(
+          "Crypto master_key and salt must be provided in config.toml");
+    }
+
+    config.crypto.master_key = hex_to_bytes(key_hex);
+    config.crypto.salt = hex_to_bytes(salt_hex);
+  } else {
+    throw std::runtime_error("Missing [crypto] section in config.toml");
   }
 
   spdlog::info("Loaded configuration from {}", path);

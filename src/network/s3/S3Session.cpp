@@ -10,7 +10,7 @@ namespace hermes::net::s3 {
 S3Session::S3Session(boost::asio::io_context& ioc, S3Config cfg)
     : ioc_(ioc), cfg_(std::move(cfg)) {}
 
-std::expected<S3Session*, ErrorInfo> S3Session::create(
+std::expected<std::unique_ptr<S3Session>, ErrorInfo> S3Session::create(
     boost::asio::io_context& ioc, const S3Config& manual_cfg) {
   S3Config final_config = manual_cfg;
 
@@ -19,7 +19,8 @@ std::expected<S3Session*, ErrorInfo> S3Session::create(
     return std::unexpected(
         ErrorInfo::From(AppError::ConfigError, "Missing S3 Configuration"));
   }
-  return new S3Session(ioc, std::move(final_config));
+  return std::unique_ptr<S3Session>(
+      new S3Session(ioc, std::move(final_config)));
 }
 
 }  // namespace hermes::net::s3

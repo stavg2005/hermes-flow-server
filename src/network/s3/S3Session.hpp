@@ -26,9 +26,9 @@ namespace hermes::net::s3 {
 class S3Session {
  public:
   // Factory Method (Loads config if not provided)
-  static std::expected<S3Session*, hermes::config::ErrorInfo> create(
+ static std::expected<std::unique_ptr<S3Session>, hermes::config::ErrorInfo> create(
       boost::asio::io_context& ioc,
-      const hermes::config::S3Config& manual_cfg = {});
+      const hermes::config::S3Config& manual_cfg={});
 
   /**
    * @brief Downloads a file from S3 to a generic Sink.

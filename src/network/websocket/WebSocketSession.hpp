@@ -1,115 +1,72 @@
 #pragma once
+
 #include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/post.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
-#include <boost/json.hpp>
+#include <deque>
 #include <memory>
 #include <string>
-#include <vector>
 
-#include "Types.hpp"
-#include "deque"
-#include "spdlog/spdlog.h"
-using namespace hermes::config;
 namespace hermes::net::websocket {
+
 /**
+ * @class WebSocketSession
  * @brief Manages a single WebSocket connection.
- * Handles serialized asynchronous reading and writing.
+ * * Handles serialized asynchronous reading and writing to ensure thread safety
+ * when communicating with the connected client.
  */
 class WebSocketSession : public std::enable_shared_from_this<WebSocketSession> {
-  beast::websocket::stream<beast::tcp_stream> ws_;
-  beast::flat_buffer buffer_;
-  std::deque<std::shared_ptr<std::string>> send_queue_;
-  bool is_initialized_ = false;
-
  public:
-  explicit WebSocketSession(tcp::socket&& socket) : ws_(std::move(socket)) {}
+  /**
+   * @brief Constructs a new WebSocketSession.
+   * @param socket The underlying TCP socket (takes ownership via move).
+   */
+  explicit WebSocketSession(boost::asio::ip::tcp::socket&& socket);
 
   /**
-   * @brief Performs the WebSocket handshake.
+   * @brief Performs the asynchronous WebSocket handshake.
+   * * Note: Implementation remains in the header because it is a template method.
+   * @tparam Body The HTTP body type of the upgrade request.
+   * @tparam Allocator The HTTP allocator type.
+   * @param req The incoming HTTP upgrade request.
    */
   template <class Body, class Allocator>
-  void do_accept(http::request<Body, http::basic_fields<Allocator>> req) {
+  void do_accept(boost::beast::http::request<Body, boost::beast::http::basic_fields<Allocator>> req) {
     ws_.async_accept(req,
-                     beast::bind_front_handler(&WebSocketSession::on_accept,
-                                               shared_from_this()));
+                     boost::beast::bind_front_handler(&WebSocketSession::on_accept,
+                                                      shared_from_this()));
   }
 
   /**
    * @brief Thread-safe, serialized sending mechanism.
-   * @param message The string payload to send.
+   * Posts the write operation to the strand/executor to prevent concurrent writes.
+   * @param message The string payload to send to the client.
    */
-  void send(std::string message) {
-    auto msg_ptr = std::make_shared<std::string>(std::move(message));
-    asio::post(ws_.get_executor(), [self = shared_from_this(), msg_ptr]() {
-      bool writing = !self->send_queue_.empty();
-      self->send_queue_.push_back(msg_ptr);
-      if (!writing) self->do_write();
-    });
-  }
+  void send(std::string message);
 
   /**
-   * @brief Initiates the close handshake.
+   * @brief Initiates the WebSocket close handshake safely.
    */
-  void close() {
-    asio::post(ws_.get_executor(), [self = shared_from_this()]() {
-      self->ws_.async_close(beast::websocket::close_code::normal,
-                            [self](beast::error_code ec) {
-                              if (ec)
-                                spdlog::debug("WS Close: {}", ec.message());
-                            });
-    });
-  }
+  void close();
 
  private:
-  void on_accept(beast::error_code ec) {
-    if (ec) return spdlog::error("WS Accept failed: {}", ec.message());
-    spdlog::info("WS Connected");
-    do_read();
-  }
+  // Core Async Handlers
+  void on_accept(boost::beast::error_code ec);
 
-  void do_read() {
-    ws_.async_read(buffer_,
-                   beast::bind_front_handler(&WebSocketSession::on_read,
-                                             shared_from_this()));
-  }
+  void do_read();
+  void on_read(boost::beast::error_code ec, std::size_t bytes_transferred);
 
-  void on_read(beast::error_code ec, std::size_t bytes_transferred) {
-    if (ec == beast::websocket::error::closed ||
-        ec == boost::asio::error::operation_aborted)
-      return;
-    if (ec) return spdlog::error("WS Read failed: {}", ec.message());
+  void do_write();
+  void on_write(boost::beast::error_code ec, std::size_t);
 
-    // Convert buffer to string for processing
-    std::string payload = beast::buffers_to_string(buffer_.data());
+  // Member Variables
+  boost::beast::websocket::stream<boost::beast::tcp_stream> ws_;
+  boost::beast::flat_buffer buffer_;
 
-    // Clear buffer immediately to prepare for next read
-    buffer_.consume(buffer_.size());
-    spdlog::debug("Received WS message: {}", payload);
+  /// Queue ensuring that multiple send() calls are serialized properly
+  std::deque<std::shared_ptr<std::string>> send_queue_;
 
-    do_read();
-  }
-
-  void do_write() {
-    ws_.async_write(asio::buffer(*send_queue_.front()),
-                    beast::bind_front_handler(&WebSocketSession::on_write,
-                                              shared_from_this()));
-  }
-
-  void on_write(beast::error_code ec, std::size_t) {
-    if (ec == beast::websocket::error::closed ||
-        ec == boost::asio::error::operation_aborted)
-      return;
-    if (ec) {
-      spdlog::error("WS Write failed: {}", ec.message());
-      return;
-    }
-
-    send_queue_.pop_front();
-    if (!send_queue_.empty()) {
-      do_write();
-    }
-  }
+  bool is_initialized_ = false;
 };
+
 }  // namespace hermes::net::websocket

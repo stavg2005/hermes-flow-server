@@ -14,6 +14,7 @@
 
 using namespace hermes::service;
 using namespace hermes::infra;
+using namespace hermes::config;
 namespace hermes::net::http {
 using req_t = beast::http::request<beast::http::string_body>;
 using res_t = beast::http::response<beast::http::string_body>;
@@ -147,7 +148,7 @@ std::expected<void, RouteError> Router::handle_stop(const req_t& req,
                                                     res_t& res) {
   auto id_res = extract_session_id(req);
   if (!id_res) return std::unexpected(id_res.error());
-  
+
   std::string id = *id_res;
   auto status = active_.remove_session(id);
 
@@ -170,7 +171,7 @@ std::expected<void, RouteError> Router::handle_pause(const req_t& req,
                                                      res_t& res) {
   auto id_res = extract_session_id(req);
   if (!id_res) return std::unexpected(id_res.error());
-  
+
   std::string id = *id_res;
   auto status = active_.pause_session(id);
 
@@ -193,7 +194,7 @@ std::expected<void, RouteError> Router::handle_resume(const req_t& req,
                                                       res_t& res) {
   auto id_res = extract_session_id(req);
   if (!id_res) return std::unexpected(id_res.error());
-  
+
   std::string id = *id_res;
   auto status = active_.resume_session(id);
 
@@ -226,7 +227,7 @@ std::expected<void, RouteError> Router::handle_websocket_request(
 
   auto id_res = extract_session_id(req);
   if (!id_res) return std::unexpected(id_res.error());
-  
+
   std::string id = *id_res;
   spdlog::info("Attaching WebSocket to session: {}", id);
 

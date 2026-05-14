@@ -13,6 +13,8 @@
 
 using namespace hermes::audio;
 using namespace hermes::infra;
+using namespace hermes::config;
+using namespace hermes::net::websocket;
 namespace hermes::service {
 ActiveSessions::ActiveSessions(IoContextPool& pool,
                                const config::AppConfig& cfg)
@@ -65,18 +67,24 @@ std::expected<std::string, ErrorInfo> ActiveSessions::create_session(
     }
   } port_guard{this, allocated_port};
 
-  // Instantiate and Register
-  auto session = std::make_shared<Session>(
-      io, session_id, std::move(*graph_result), cfg_.s3,
+  auto session_result = Session::create(
+      io, session_id, std::move(*graph_result), cfg_.s3,cfg_.crypto,
       (session_type == SessionType::WebRTC), cfg_.janus.address, allocated_port,
-      (session_type == SessionType::StandartEncrypted));  //
+      (session_type == SessionType::StandartEncrypted));
 
-  {
-    std::lock_guard<std::mutex> lock(mutex_);  //
-    sessions_[session_id] = std::move(session);
+  if (!session_result) {
+    if (allocated_port) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      available_webrtc_ports_.push(*allocated_port);
+    }
+    return std::unexpected(session_result.error());
   }
 
-  port_guard.released = true;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sessions_[session_id] = std::move(*session_result);
+  }
+
   return session_id;
 }
 

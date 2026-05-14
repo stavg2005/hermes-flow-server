@@ -17,6 +17,7 @@
 
 using namespace hermes::net;
 using namespace hermes::audio;
+using namespace hermes::config;
 static void SetupLogging() {
   std::vector<spdlog::sink_ptr> sinks;
 

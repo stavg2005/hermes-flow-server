@@ -7,6 +7,7 @@
 #include <typeinfo>
 
 #include "AudioMath.hpp"
+#include "PcmCast.hpp"
 #include "Config.hpp"
 #include "Node.hpp"
 #include "Types.hpp"
@@ -98,9 +99,8 @@ std::expected<void, NodeError> MixerNode::process_frame(
 
     has_active_inputs = true;
 
-    auto input_samples =
-        std::span(reinterpret_cast<const int16_t*>(temp_input_buffer_.data()),
-                  SAMPLES_PER_FRAME);
+    auto input_samples = pcm::as_samples(
+        std::span<const uint8_t>(temp_input_buffer_));
 
     AudioMath::sum_buffers(accumulator_, input_samples);
   }

@@ -7,6 +7,8 @@
 
 using namespace hermes::service;
 using namespace hermes::net::http;
+using namespace hermes::config;
+using namespace hermes::infra;
 namespace hermes::net {
 std::expected<std::unique_ptr<Server>, ErrorInfo> Server::create(
     boost::asio::io_context& main_ioc, const hermes::config::AppConfig& cfg) {

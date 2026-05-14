@@ -12,6 +12,9 @@
 #include "Types.hpp"
 
 using namespace hermes::infra;
+
+
+using namespace hermes::config;
 namespace hermes::net::http {
 
 constexpr int SESSION_TIMEOUT_SECONDS = 15;

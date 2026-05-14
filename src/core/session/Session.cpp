@@ -9,8 +9,10 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "AudioExecutor.hpp"
+#include "Config.hpp"
 #include "ISessionObserver.hpp"
 #include "Nodes.hpp"
 #include "RTPStreamer.hpp"
@@ -18,22 +20,45 @@
 
 using namespace hermes::audio;
 using namespace hermes::config;
+using namespace hermes::net::rtp;
 namespace hermes::service {
 
-Session::Session(asio::io_context& io, std::string id, Graph&& g,
-                 const config::S3Config& s3_config, bool is_web_rtc,
-                 std::string janus_ip, std::optional<uint16_t> janus_port,
-                 bool is_encrypted)
+std::expected<std::shared_ptr<Session>, config::ErrorInfo> Session::create(
+    asio::io_context& io, std::string id, Graph&& g,
+    const config::S3Config& s3_config,
+    const config::CryptoConfig& crypto_config, bool is_web_rtc,
+    std::string janus_ip, std::optional<uint16_t> janus_port,
+    bool is_encrypted) {
+  auto heap_graph = std::make_unique<Graph>(std::move(g));
+
+  auto executor_result = AudioExecutor::create(io, *heap_graph, s3_config);
+  if (!executor_result) {
+    return std::unexpected(executor_result.error());
+  }
+
+  auto RTPStremer = RTPStreamer::create(io, crypto_config);
+
+  return std::make_shared<Session>(
+      io, std::move(id), std::move(heap_graph), std::move(*executor_result),
+      std::move(RTPStremer), is_web_rtc, std::move(janus_ip), janus_port,
+      is_encrypted);
+}
+
+Session::Session(asio::io_context& io, std::string id, std::unique_ptr<Graph> g,
+                 std::unique_ptr<AudioExecutor> audio_executor,
+                 std::unique_ptr<net::rtp::RTPStreamer> streamer,
+                 bool is_web_rtc, std::string janus_ip,
+                 std::optional<uint16_t> janus_port, bool is_encrypted)
     : io_(io),
       id_(std::move(id)),
       resume_channel_(io_, 1),
       timer_(io),
-      graph_(std::make_unique<Graph>(std::move(g))),
+      graph_(std::move(g)),
+      audio_executor_(std::move(audio_executor)),
+      streamer_(std::move(streamer)),  // Inject dependency
       janus_ip_(std::move(janus_ip)),
       janus_port_(janus_port),
       is_webrtc_(is_web_rtc) {
-  audio_executor_ = std::make_unique<AudioExecutor>(io_, *graph_, s3_config);
-  streamer_ = std::make_unique<RTPStreamer>(io_);
   if (is_encrypted) {
     streamer_->setup_security();
   }
@@ -87,8 +112,8 @@ void Session::configure_streamer_from_graph() {
     }
   } else if (graph_->clients_node != nullptr) {
     for (const auto& client_config : graph_->clients_node->clients) {
-      spdlog::info("[{}] Auto-registering client: {}:{}", id_,
-                   client_config.ip, client_config.port);
+      spdlog::info("[{}] Auto-registering client: {}:{}", id_, client_config.ip,
+                   client_config.port);
       streamer_->add_client(client_config.ip, client_config.port,
                             client_config.packet_loss_ratio);
     }

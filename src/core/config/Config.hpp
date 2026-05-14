@@ -8,38 +8,28 @@
 namespace hermes::config {
 
 // Assumptions: 8kHz Sampling Rate, 16-bit Mono PCM
-static constexpr int SAMPLE_RATE = 8000;
-static constexpr int CHANNELS = 1;
-static constexpr int WINDOW_MS = 50;
+inline constexpr int SAMPLE_RATE = 8000;
+inline constexpr int CHANNELS = 1;
+inline constexpr int WINDOW_MS = 50;
 
 // חישוב גודל ה-Buffer הנדרש בדגימות
-static constexpr int MAX_DELAY_SAMPLES = (SAMPLE_RATE * WINDOW_MS) / 1000;
-static constexpr int DELAY_BUFFER_SIZE = MAX_DELAY_SAMPLES * 2;
-static constexpr size_t FRAME_DURATION = 20;      // Duration in ms
-static constexpr size_t SAMPLES_PER_FRAME = 160;  // 8000 Hz * 0.020 s
-static constexpr size_t BYTES_PER_SAMPLE = 2;     // 16-bit
-static constexpr size_t FRAME_SIZE_BYTES =
+inline constexpr int MAX_DELAY_SAMPLES = (SAMPLE_RATE * WINDOW_MS) / 1000;
+inline constexpr int DELAY_BUFFER_SIZE = MAX_DELAY_SAMPLES * 2;
+inline constexpr size_t FRAME_DURATION = 20;      // Duration in ms
+inline constexpr size_t SAMPLES_PER_FRAME = 160;  // 8000 Hz * 0.020 s
+inline constexpr size_t BYTES_PER_SAMPLE = 2;     // 16-bit
+inline constexpr size_t FRAME_SIZE_BYTES =
     SAMPLES_PER_FRAME * BYTES_PER_SAMPLE;  // 320 bytes per frame
-static constexpr size_t WAV_HEADER_SIZE = 44;
-static constexpr int MS = 20;
-static constexpr size_t PAYLOAD_TYPE = 8;  // PCMA (G.711 A-law)
-static constexpr size_t BUFFER_SIZE = 1024UZ * 128UZ;
-static constexpr size_t RTP_HEADER_SIZE = 12;
-static constexpr std::array<uint8_t, 16> STATIC_RTP_KEY = {
-    0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
-    0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C};
-static const std::vector<uint8_t> STATIC_SALT = {
-    0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18,
-    0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E, 0x8F, 0x90};
+inline constexpr size_t WAV_HEADER_SIZE = 44;
+inline constexpr int MS = 20;
+inline constexpr size_t PAYLOAD_TYPE = 8;  // PCMA (G.711 A-law)
+inline constexpr size_t BUFFER_SIZE = 1024UZ * 128UZ;
+inline constexpr size_t RTP_HEADER_SIZE = 12;
 
-static const std::vector<uint8_t> STATIC_MASTER_KEY = {
-        0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6,
-        0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C
-    };
 // Audio Soft-Clipping Limits (to avoid hardware distortion near max/min)
-static constexpr float MAX_INT16 = 32767.0F;
-static constexpr size_t CLIP_LIMIT_POSITIVE = 30000;
-static constexpr size_t CLIP_LIMIT_NEGATIVE = 30000;
+inline constexpr float MAX_INT16 = 32767.0F;
+inline constexpr size_t CLIP_LIMIT_POSITIVE = 30000;
+inline constexpr size_t CLIP_LIMIT_NEGATIVE = 30000;
 
 struct ServerConfig {
   std::string address = "127.0.0.1";
@@ -62,10 +52,16 @@ struct JnausConfig {
   uint16_t port_end;
 };
 
+struct CryptoConfig {
+  std::vector<uint8_t> master_key;
+  std::vector<uint8_t> salt;
+};
+
 struct AppConfig {
   ServerConfig server;
   S3Config s3;
   JnausConfig janus;
+  CryptoConfig crypto;
 };
 
 enum class SessionType { Standard, StandartEncrypted, WebRTC };

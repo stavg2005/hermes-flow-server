@@ -1,13 +1,13 @@
 /**
  * @file PitchShifter.cpp
  * @brief Implements pitch shifting using a dual-read-head delay line technique.
- * 
+ *
  * This pitch shifter uses a circular delay buffer with two read heads offset by 180 degrees.
  * By modulating the read speed relative to the write speed, the pitch is shifted.
  * A triangular crossfade is applied between the two read heads to minimize clipping and popping
  * artifacts that occur when a read head wraps around the buffer.
  */
-#include "PitchShifter.h"
+#include "PitchShifter.hpp"
 
 #include <algorithm>
 #include <cmath>

@@ -1,7 +1,8 @@
-
+#pragma once
 #include <string>
 #include <filesystem>
 #include "spdlog/spdlog.h"
+
 /**
  * @brief RAII guard. Deletes file on destruction unless committed.
  */

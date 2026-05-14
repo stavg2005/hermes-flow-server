@@ -4,6 +4,7 @@
 #include <span>
 
 #include "Alaw.hpp"
+#include "PcmCast.hpp"
 namespace hermes::audio {
 /**
  * @brief Interface for Audio Encoding Algorithms.
@@ -44,8 +45,7 @@ struct ALawCodecStrategy : ICodecStrategy {
       return 0;
     }
 
-    auto samples = std::span<const int16_t>(
-        reinterpret_cast<const int16_t*>(pcm.data()), sample_count);
+    auto samples = pcm::as_samples(pcm);
 
     encode_alaw(samples, out_buffer);
 

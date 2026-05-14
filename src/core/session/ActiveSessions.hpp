@@ -19,7 +19,7 @@
 #include "Session.hpp"
 #include "WebSocketSession.hpp"
 
-using namespace hermes::infra;
+
 namespace hermes::service {
 
 struct SessionRtpStats {
@@ -33,9 +33,9 @@ struct SessionRtpStats {
  */
 class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
  public:
-  using req_t = http::request<http::string_body>;
+  using req_t = boost::beast::http::request<boost::beast::http::string_body>;
 
-  explicit ActiveSessions(IoContextPool& pool, const config::AppConfig& cfg);
+  explicit ActiveSessions(infra::IoContextPool& pool, const config::AppConfig& cfg);
 
   /**
    * @brief Factory method to spawn a new Audio Session.
@@ -51,15 +51,15 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
    *
    * @return The unique session ID (string) to be returned to the client.
    */
-  std::expected<std::string, ErrorInfo> create_session(
-      const boost::json::object& jobj, SessionType session_type);
+  std::expected<std::string, config::ErrorInfo> create_session(
+      const boost::json::object& jobj, config::SessionType session_type);
 
   /**
    * @brief Upgrades connection to WebSocket and attaches observer to the audio
    * session.
    * @param stream The underlying TCP stream (moved from the HTTP handler).
    */
-  std::expected<void, ErrorInfo> create_and_run_websocket_session(
+  std::expected<void, config::ErrorInfo> create_and_run_websocket_session(
       const std::string& audio_session_id, const req_t& req,
       boost::beast::tcp_stream& stream);
 
@@ -101,7 +101,7 @@ class ActiveSessions : public std::enable_shared_from_this<ActiveSessions> {
  private:
   mutable std::mutex mutex_;
 
-  IoContextPool& pool_;
+  infra::IoContextPool& pool_;
   /// Monotonic counter for observability only — NOT the session key (UUIDs are used for that).
   std::atomic<int64_t> next_session_id_{0};
   boost::uuids::random_generator generator_;

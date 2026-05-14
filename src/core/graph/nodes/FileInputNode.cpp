@@ -10,6 +10,7 @@
 #include "FileSink.hpp"
 #include "core/config/Config.hpp"
 #include "core/config/Types.hpp"
+#include "infra/audio/PcmCast.hpp"
 #include "infra/audio/WavUtils.hpp"
 #include "network/s3/S3Session.hpp"  // Corrected header path for S3Session
 
@@ -35,30 +36,41 @@ std::expected<void, NodeError> FileInputNode::open() {
   boost::system::error_code ec;
 
   while (attempt < max_retries) {
-    file_handle_.open(file_path_, boost::asio::file_base::read_only,// NOLINT(bugprone-unused-return-value)
+    file_handle_.open(file_path_,
+                      boost::asio::file_base::
+                          read_only,  // NOLINT(bugprone-unused-return-value)
                       ec);
 
     if (!ec && file_handle_.is_open()) {
       constexpr size_t HEADER_BUF_SIZE = 256;
       std::array<uint8_t, HEADER_BUF_SIZE> header_buf;
-      size_t bytes_read = file_handle_.read_some(boost::asio::buffer(header_buf), ec);
+      size_t bytes_read =
+          file_handle_.read_some(boost::asio::buffer(header_buf), ec);
 
       size_t offset = 0;
       if (!ec && bytes_read > 0) {
-        offset = wav::get_audio_data_offset(std::span<uint8_t>(header_buf.data(), bytes_read));
+        offset = wav::get_audio_data_offset(
+            std::span<uint8_t>(header_buf.data(), bytes_read));
       }
 
-      file_handle_.seek(static_cast<int64_t>(offset), boost::asio::file_base::seek_set, ec);
+      file_handle_.seek(static_cast<int64_t>(offset),
+                        boost::asio::file_base::seek_set, ec);
       if (ec) {
-        spdlog::warn("[{}] Failed to seek file past header: {}", file_name_, ec.message());
+        spdlog::warn("[{}] Failed to seek file past header: {}", file_name_,
+                     ec.message());
         offset = 0;
         file_handle_.seek(0, boost::asio::file_base::seek_set, ec);
       }
 
       uint64_t file_size = file_handle_.size(ec);
-      total_frames_ = static_cast<int>((file_size > static_cast<uint64_t>(offset) ? file_size - static_cast<uint64_t>(offset) : 0ULL) / FRAME_SIZE_BYTES);
+      total_frames_ =
+          static_cast<int>((file_size > static_cast<uint64_t>(offset)
+                                ? file_size - static_cast<uint64_t>(offset)
+                                : 0ULL) /
+                           FRAME_SIZE_BYTES);
 
-      spdlog::info("[{}] Opened file. Offset: {}, Total frames: {}", file_name_, offset, total_frames_);
+      spdlog::info("[{}] Opened file. Offset: {}, Total frames: {}", file_name_,
+                   offset, total_frames_);
       return {};  // Success
     }
 
@@ -75,7 +87,7 @@ std::expected<void, NodeError> FileInputNode::open() {
 
 std::expected<void, NodeError> FileInputNode::close() {
   boost::system::error_code ec;
-    file_handle_.close(ec);  // NOLINT
+  file_handle_.close(ec);  // NOLINT
 
   if (ec) {
     return error(NodeErrorCode::FileIOError, "Failed to close file {} {}: {}",
@@ -171,16 +183,12 @@ boost::asio::awaitable<size_t> FileInputNode::fetch_bytes(
   co_return 0;
 }
 
-
-
 void FileInputNode::apply_effects(std::span<uint8_t> frame_buffer) {
   if (options_ == nullptr) {
     return;
   }
 
-  auto* samples = reinterpret_cast<int16_t*>(frame_buffer.data());
-  size_t num_samples = frame_buffer.size() / sizeof(int16_t);
-  std::span<int16_t> audio_span(samples, num_samples);
+  auto audio_span = pcm::as_samples(frame_buffer);
 
   if (options_->gain != 1.0) {
     float gain = static_cast<float>(options_->gain);
@@ -193,7 +201,8 @@ void FileInputNode::apply_effects(std::span<uint8_t> frame_buffer) {
   }
 
   if (options_->pitch_shift != 0.0) {
-    pitch_shifter_.process(audio_span, static_cast<float>(options_->pitch_shift));
+    pitch_shifter_.process(audio_span,
+                           static_cast<float>(options_->pitch_shift));
   }
 }
 
@@ -204,8 +213,7 @@ FileInputNode::download_from_s3(const config::S3Config& s3_config) {
     co_return std::unexpected(session_result.error());
   }
 
-  std::unique_ptr<hermes::net::s3::S3Session> s3_session(
-      session_result.value());
+  auto s3_session = std::move(session_result.value());
   infra::FileSink sink(io_);
 
   if (auto res = sink.Prepare(file_path_); !res) {

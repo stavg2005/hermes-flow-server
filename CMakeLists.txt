@@ -185,6 +185,8 @@ set(SOURCES_NETWORK
     src/network/s3/AwsSigner.cpp
     src/network/rtp/Packet.cpp
     src/network/rtp/RTPPacketizer.cpp
+    src/network/rtp/RTPStreamer.cpp
+    src/network/websocket/WebSocketSession.cpp
     src/network/http/HttpSession.cpp
     src/network/http/Listener.cpp
     src/network/http/Router.cpp

@@ -1,35 +1,52 @@
 #include "core/graph/AudioExecutor.hpp"
 
 #include <algorithm>
-#include <expected>
-#include <vector>
-
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/experimental/channel.hpp>
+#include <expected>
+#include <vector>
 
 #include "Nodes.hpp"
 #include "Types.hpp"
 
 namespace {
 /**
- * @brief Helper to dynamically execute multiple awaitables in parallel using a channel.
+ * @brief Helper to dynamically execute multiple awaitables in parallel safely.
  */
 template <typename T, typename AsyncFunc>
-boost::asio::awaitable<std::expected<void, hermes::config::ErrorInfo>> await_all_dynamic(
-    boost::asio::io_context& io, const std::vector<T*>& items, AsyncFunc&& async_func) {
+boost::asio::awaitable<std::expected<void, hermes::config::ErrorInfo>>
+await_all_dynamic(boost::asio::io_context& io, const std::vector<T*>& items,
+                  AsyncFunc async_func) {  // FIX 1: Pass by value, not &&
+
   if (items.empty()) {
     co_return std::expected<void, hermes::config::ErrorInfo>();
   }
 
-  boost::asio::experimental::channel<void(boost::system::error_code, std::expected<void, hermes::config::ErrorInfo>)> ch(io, items.size());
+  using ChannelType = boost::asio::experimental::channel<void(
+      boost::system::error_code,
+      std::expected<void, hermes::config::ErrorInfo>)>;
+
+  // FIX 2: Heap allocate the channel via shared_ptr to prevent Use-After-Free
+  auto ch = std::make_shared<ChannelType>(io, items.size());
 
   for (auto* item : items) {
     boost::asio::co_spawn(
         io,
-        [item, &ch, &async_func]() -> boost::asio::awaitable<void> {
-          auto res = co_await async_func(item);
-          ch.try_send(boost::system::error_code{}, res);
+        // FIX 3: Capture `ch` and `async_func` by value (copying the shared_ptr
+        // and the lambda)
+        [item, ch, async_func]() -> boost::asio::awaitable<void> {
+          try {
+            auto res = co_await async_func(item);
+            ch->try_send(boost::system::error_code{}, res);
+          } catch (const std::exception& e) {
+            // FIX 4: Prevent deadlocks if the async_func throws an unexpected
+            // exception
+            spdlog::error("Parallel execution exception: {}", e.what());
+            ch->try_send(boost::system::error_code{},
+                         std::unexpected(hermes::config::ErrorInfo::From(
+                             hermes::config::AppError::Critical, e.what())));
+          }
         },
         boost::asio::detached);
   }
@@ -37,15 +54,25 @@ boost::asio::awaitable<std::expected<void, hermes::config::ErrorInfo>> await_all
   std::expected<void, hermes::config::ErrorInfo> final_res;
   for (size_t i = 0; i < items.size(); ++i) {
     boost::system::error_code ec;
-    auto res = co_await ch.async_receive(boost::asio::redirect_error(boost::asio::use_awaitable, ec));
-    if (!res && final_res.has_value()) {
+    auto res = co_await ch->async_receive(
+        boost::asio::redirect_error(boost::asio::use_awaitable, ec));
+
+    if (ec) {
+      if (final_res.has_value()) {
+        final_res = std::unexpected(hermes::config::ErrorInfo::From(
+            hermes::config::AppError::NetworkError, "Channel sync error"));
+      }
+    } else if (!res && final_res.has_value()) {
+      // Record the first error encountered, but keep waiting for all tasks to
+      // finish
       final_res = res;
     }
   }
-  ch.close();
+
+  ch->close();
   co_return final_res;
 }
-} // namespace
+}  // namespace
 
 #include "core/graph/Node.hpp"
 #include "spdlog/spdlog.h"
@@ -54,12 +81,21 @@ using namespace hermes::service;
 
 namespace hermes::audio {
 
+std::expected<std::unique_ptr<AudioExecutor>, config::ErrorInfo>
+AudioExecutor::create(boost::asio::io_context& io, const Graph& graph,
+                      config::S3Config s3_config) {
+  if (graph.start_node == nullptr) {
+    spdlog::error("[AudioExecutor] Invalid graph: missing start node.");
+    return std::unexpected(config::ErrorInfo::From(
+        config::AppError::LogicError, "Invalid graph: missing start node."));
+  }
+
+  return std::make_unique<AudioExecutor>(io, graph, std::move(s3_config));
+}
+
 AudioExecutor::AudioExecutor(boost::asio::io_context& io, const Graph& graph,
                              config::S3Config s3_config)
     : io_(io), graph_(graph), s3_config_(std::move(s3_config)) {
-  if (graph_.start_node == nullptr) {
-    throw std::runtime_error("Invalid graph: missing start node.");
-  }
   current_node_ = graph_.start_node;
 }
 
@@ -121,7 +157,7 @@ AudioExecutor::prepare() {
 boost::asio::awaitable<std::expected<void, config::ErrorInfo>>
 AudioExecutor::ensure_assets_exist() {
   spdlog::info("Ensuring all file assets exist...");
-  
+
   co_return co_await await_all_dynamic(
       io_, graph_.file_nodes,
       [this](auto* node) { return node->ensure_file_exists(s3_config_); });

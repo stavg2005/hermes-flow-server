@@ -18,21 +18,21 @@ namespace hermes::net {
  **/
 class Listener : public std::enable_shared_from_this<Listener> {
  public:
-  static std::expected<std::shared_ptr<Listener>, ErrorInfo> create(
-      asio::io_context& main_ioc, IoContextPool& pool,
-      const tcp::endpoint& endpoint, std::shared_ptr<http::Router> router);
+  static std::expected<std::shared_ptr<Listener>, config::ErrorInfo> create(
+      boost::asio::io_context& main_ioc, infra::IoContextPool& pool,
+      const boost::asio::ip::tcp::endpoint& endpoint, std::shared_ptr<hermes::net::http::Router> router);
   // Start accepting incoming connections
   void run();
 
  private:
   // Accept a new connection
-  asio::awaitable<std::expected<void, ErrorInfo>> do_accept();
+  boost::asio::awaitable<std::expected<void, config::ErrorInfo>> do_accept();
 
-  Listener(asio::io_context& main_ioc, IoContextPool& pool,
-           tcp::acceptor&& acceptor, std::shared_ptr<http::Router> router);
+  Listener(boost::asio::io_context& main_ioc, infra::IoContextPool& pool,
+           boost::asio::ip::tcp::acceptor&& acceptor, std::shared_ptr<http::Router> router);
   // Member variables
 
-  tcp::acceptor acceptor_;
+  boost::asio::ip::tcp::acceptor acceptor_;
   boost::asio::io_context& main_ioc_;
   infra::IoContextPool& pool_;
   std::shared_ptr<http::Router> router_;
